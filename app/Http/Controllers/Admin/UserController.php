@@ -7,7 +7,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
@@ -33,7 +32,7 @@ class UserController extends Controller
     }
 
     /**
-     * Menyimpan data akun pengguna baru (DAFTAR VIA SUPABASE API & SYNC PROFILES)
+     * Menyimpan data akun pengguna baru (disimpan ke tabel profiles)
      */
     public function store(Request $request)
     {
@@ -44,70 +43,20 @@ class UserController extends Controller
             'role' => ['required', 'in:admin,guru,ADMIN,GURU'],
         ]);
 
-        $baseUrl = rtrim(env('SUPABASE_URL'), '/');
-        $serviceKey = env('SUPABASE_SERVICE_ROLE_KEY') ?? env('SUPABASE_ANON_KEY');
         $role = strtoupper($request->role);
 
-        // 1. DAFTARKAN USER SECARA RESMI KE SUPABASE AUTH
-        $response = Http::withHeaders([
-            'apikey'        => $serviceKey,
-            'Authorization' => 'Bearer ' . $serviceKey,
-            'Content-Type'  => 'application/json',
-        ])->post("{$baseUrl}/auth/v1/admin/users", [
-            'email'         => $request->email,
-            'password'      => $request->password,
-            'email_confirm' => true,
-            'user_metadata' => [
-                'name' => $request->name,
-                'role' => $role,
-            ],
+        // Simpan akun langsung ke tabel profiles di PostgreSQL lokal
+        DB::table('profiles')->insert([
+            'id'         => (string) Str::uuid(),
+            'name'       => $request->name,
+            'email'      => $request->email,
+            'password'   => Hash::make($request->password),
+            'role'       => $role,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
-        $userId = null;
-
-        if ($response->successful()) {
-            $data = $response->json();
-            $userId = $data['id'] ?? null;
-        }
-
-        // Jika API Admin Supabase belum diizinkan, gunakan fallback register API biasa
-        if (!$userId) {
-            $signupResponse = Http::withHeaders([
-                'apikey'        => env('SUPABASE_ANON_KEY'),
-                'Content-Type'  => 'application/json',
-            ])->post("{$baseUrl}/auth/v1/signup", [
-                'email'    => $request->email,
-                'password' => $request->password,
-                'data'     => [
-                    'name' => $request->name,
-                    'role' => $role,
-                ]
-            ]);
-
-            if ($signupResponse->successful()) {
-                $signupData = $signupResponse->json();
-                $userId = $signupData['user']['id'] ?? $signupData['id'] ?? null;
-            }
-        }
-
-        // Jika pendaftaran Supabase gagal sama sekali
-        if (!$userId) {
-            return redirect()->back()->withInput()->with('error', 'Gagal mendaftarkan akun di Supabase. Periksa koneksi internet/pendaftaran Supabase.');
-        }
-
-        // 2. SIMPAN / SYNC PROFIL DI TABEL PROFILES DATABASE LOCAL/POSTGRESQL
-        DB::table('profiles')->updateOrInsert(
-            ['id' => $userId],
-            [
-                'name'       => $request->name,
-                'email'      => $request->email,
-                'role'       => $role,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]
-        );
-
-        return redirect()->route('admin.users.index')->with('success', 'Akun berhasil terdaftar di Supabase dan sistem!');
+        return redirect()->route('admin.users.index')->with('success', 'Akun berhasil terdaftar di sistem!');
     }
 
     /**
@@ -144,6 +93,10 @@ class UserController extends Controller
             'role' => strtoupper($request->role),
         ];
 
+        if ($request->filled('password')) {
+            $data['password'] = Hash::make($request->password);
+        }
+
         DB::transaction(function () use ($request, $user, $data) {
             $user->update($data);
         });
@@ -163,12 +116,6 @@ class UserController extends Controller
         DB::transaction(function () use ($user) {
             // Hapus dari profiles
             $user->delete();
-            // Hapus dari auth.users
-            try {
-                DB::table('auth.users')->where('id', $user->id)->delete();
-            } catch (\Exception $e) {
-                // Ignore jika sudah terhapus cascade
-            }
         });
 
         return redirect()->route('admin.users.index')->with('success', 'Akun berhasil dihapus.');

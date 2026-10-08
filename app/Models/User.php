@@ -10,10 +10,10 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    // Menghubungkan ke tabel profiles milik Supabase
+    // Tabel profiles (akun login, disimpan di PostgreSQL lokal)
     protected $table = 'profiles';
 
-    // Primary Key berbentuk UUID string dari Supabase
+    // Primary Key berbentuk UUID string
     protected $keyType = 'string';
     public $incrementing = false;
 
@@ -22,12 +22,20 @@ class User extends Authenticatable
         'name',
         'email',
         'role',
+        'password',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'password' => 'hashed',
+        ];
+    }
 
     /**
      * Helper method untuk cek apakah user adalah Admin
