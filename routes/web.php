@@ -73,6 +73,10 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::get('/absen', [AbsensiGuruController::class, 'rekapAdminIndex'])->name('absen');
     Route::get('/spp', [SppController::class, 'index'])->name('spp.index');
     Route::post('/spp', [SppController::class, 'store'])->name('spp.store');
+    Route::get('/spp-audit', [SppController::class, 'audit'])->name('spp.audit');
+    Route::get('/spp/{spp}/kuitansi', [SppController::class, 'kuitansi'])->name('spp.kuitansi');
+    Route::put('/spp/{spp}', [SppController::class, 'update'])->name('spp.update');
+    Route::delete('/spp/{spp}', [SppController::class, 'destroy'])->name('spp.destroy');
 });
 
 // ROUTE KHUSUS GURU

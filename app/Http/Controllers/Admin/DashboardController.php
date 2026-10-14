@@ -22,7 +22,7 @@ class DashboardController extends Controller
         $totalMapel = Mapel::count();
 
         // 2. Absensi Guru Hari Ini
-        $today = Carbon::today()->toDateString();
+        $today = Carbon::now('Asia/Jakarta')->toDateString(); // WIB, sama dengan tanggal yang dipakai saat guru absen
         $absenHariIni = AbsensiGuru::whereDate('tanggal', $today)->get();
         
         $hadirGuru = $absenHariIni->where('status', 'Hadir')->count();

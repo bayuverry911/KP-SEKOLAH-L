@@ -7,11 +7,13 @@ use App\Models\Guru;
 use App\Models\Mapel;
 use App\Models\Kelas;
 use App\Models\Siswa;
+use App\Models\User;
 use App\Models\Jadwal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Support\Geofence;
 use Carbon\Carbon;
 
 class AbsensiGuruController extends Controller
@@ -47,6 +49,19 @@ class AbsensiGuruController extends Controller
             }
         }
 
+        // Ringkasan jumlah (mengikuti filter yang sedang aktif)
+        $hitungStatus = (clone $query)
+            ->select('status', DB::raw('COUNT(*) AS total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $ringkasan = [
+            'total' => (int) $hitungStatus->sum(),
+            'Hadir' => (int) ($hitungStatus['Hadir'] ?? 0),
+            'Izin'  => (int) ($hitungStatus['Izin'] ?? 0),
+            'Sakit' => (int) ($hitungStatus['Sakit'] ?? 0),
+        ];
+
         // Data terbaru
         $absensis = $query
             ->latest('tanggal')
@@ -56,7 +71,34 @@ class AbsensiGuruController extends Controller
         // Pertahankan filter ketika pagination
         $absensis->appends($request->all());
 
-        return view('admin.absen.index', compact('absensis'));
+        // NUPTK cadangan: jika catatan presensi tidak menyimpan NUPTK ("-"),
+        // ambil dari tabel data guru berdasarkan akun yang absen.
+        $nuptkGuru = Guru::whereIn('user_id', $absensis->pluck('user_id')->filter()->unique())
+            ->pluck('nuptk', 'user_id');
+
+        // Daftar guru yang BELUM presensi pada tanggal yang dilihat
+        // (tanggal dipilih, atau hari ini jika tidak ada filter bulan/tahun/pencarian)
+        $tanggalCek = $request->filled('tanggal')
+            ? Carbon::parse($request->tanggal, 'Asia/Jakarta')->toDateString()
+            : Carbon::now('Asia/Jakarta')->toDateString();
+
+        $tampilBelumAbsen = $request->filled('tanggal')
+            || (! $request->filled('bulan') && ! $request->filled('tahun') && ! $request->filled('search'));
+
+        $belumAbsen = collect();
+
+        if ($tampilBelumAbsen) {
+            $sudahAbsen = AbsensiGuru::whereDate('tanggal', $tanggalCek)->pluck('user_id');
+
+            $belumAbsen = User::whereRaw('LOWER(role) = ?', ['guru'])
+                ->whereNotIn('id', $sudahAbsen)
+                ->orderBy('name')
+                ->get(['id', 'name']);
+        }
+
+        return view('admin.absen.index', compact(
+            'absensis', 'ringkasan', 'nuptkGuru', 'belumAbsen', 'tampilBelumAbsen', 'tanggalCek'
+        ));
     }
 
 
@@ -103,7 +145,39 @@ class AbsensiGuruController extends Controller
             'jenis_presensi' => 'nullable|in:Pulang',
 
             'keterangan' => 'nullable|string|max:500',
+
+            // Data GPS dari browser
+            'latitude' => 'nullable|numeric|between:-90,90',
+
+            'longitude' => 'nullable|numeric|between:-180,180',
+
+            'akurasi' => 'nullable|numeric|min:0',
         ]);
+
+
+        // ========================================================
+        // CEK LOKASI GPS (Hadir & Pulang wajib di dalam radius sekolah)
+        // Izin / Sakit tidak dibatasi lokasi.
+        // ========================================================
+
+        $perluLokasi =
+            $request->jenis_presensi === 'Pulang'
+            || ($request->status ?? 'Hadir') === 'Hadir';
+
+        $lokasi = null;
+
+        if ($perluLokasi) {
+
+            $lokasi = $this->cekLokasi($request);
+
+            if (! $lokasi['ok']) {
+
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->with('error', $lokasi['pesan']);
+            }
+        }
 
 
         $guruData = Guru::where('user_id', $user->id)
@@ -154,6 +228,13 @@ class AbsensiGuruController extends Controller
             $absensi->jam_keluar = $currentTime;
 
 
+            $absensi->lat_keluar = $lokasi['lat'];
+
+            $absensi->lng_keluar = $lokasi['lng'];
+
+            $absensi->jarak_keluar = $lokasi['jarak'];
+
+
             $pesan =
                 'Absen pulang berhasil dicatat pada pukul '
                 . substr($currentTime, 0, 5)
@@ -192,6 +273,12 @@ class AbsensiGuruController extends Controller
 
                 $absensi->jam_masuk = $currentTime;
 
+                $absensi->lat_masuk = $lokasi['lat'];
+
+                $absensi->lng_masuk = $lokasi['lng'];
+
+                $absensi->jarak_masuk = $lokasi['jarak'];
+
             } else {
 
                 $absensi->jam_masuk = null;
@@ -220,6 +307,77 @@ class AbsensiGuruController extends Controller
         return redirect()
             ->back()
             ->with('success', $pesan);
+    }
+
+
+    /**
+     * ============================================================
+     * VALIDASI LOKASI GPS (SERVER-SIDE)
+     * Hitung jarak guru ke titik sekolah dengan rumus Haversine.
+     * ============================================================
+     *
+     * @return array{ok: bool, pesan?: string, lat?: float|null, lng?: float|null, jarak?: int|null}
+     */
+    private function cekLokasi(Request $request): array
+    {
+        $lat = $request->filled('latitude') ? (float) $request->latitude : null;
+
+        $lng = $request->filled('longitude') ? (float) $request->longitude : null;
+
+        // Pembatasan lokasi dimatikan lewat .env (SEKOLAH_GPS_WAJIB=false)
+        if (! config('sekolah.gps_wajib')) {
+
+            return ['ok' => true, 'lat' => $lat, 'lng' => $lng, 'jarak' => null];
+        }
+
+        $sekolahLat = config('sekolah.latitude');
+
+        $sekolahLng = config('sekolah.longitude');
+
+        if ($sekolahLat === null || $sekolahLng === null) {
+
+            return [
+                'ok'    => false,
+                'pesan' => 'Koordinat sekolah belum dikonfigurasi. Hubungi admin.',
+            ];
+        }
+
+        if ($lat === null || $lng === null) {
+
+            return [
+                'ok'    => false,
+                'pesan' => 'Lokasi GPS tidak terdeteksi. Aktifkan GPS & izinkan akses lokasi di browser, lalu coba lagi.',
+            ];
+        }
+
+        $jarak = (int) round(
+            Geofence::jarakMeter((float) $sekolahLat, (float) $sekolahLng, $lat, $lng)
+        );
+
+        $akurasiMaks = (int) config('sekolah.akurasi_maks_meter');
+
+        if ($request->filled('akurasi') && (float) $request->akurasi > $akurasiMaks) {
+
+            return [
+                'ok'    => false,
+                'pesan' => 'Akurasi GPS terlalu rendah (±' . round((float) $request->akurasi)
+                    . ' m, maksimal ' . $akurasiMaks . ' m). Perkiraan jarak Anda dari sekolah ±' . $jarak
+                    . ' m. Gunakan HP dengan GPS aktif di area terbuka, lalu coba lagi.',
+            ];
+        }
+
+        $radius = (int) config('sekolah.radius_meter');
+
+        if ($jarak > $radius) {
+
+            return [
+                'ok'    => false,
+                'pesan' => 'Anda berada ±' . $jarak . ' m dari sekolah. Presensi hanya dapat dilakukan dalam radius '
+                    . $radius . ' m dari lokasi sekolah.',
+            ];
+        }
+
+        return ['ok' => true, 'lat' => $lat, 'lng' => $lng, 'jarak' => $jarak];
     }
 
 

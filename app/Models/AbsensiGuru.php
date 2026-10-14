@@ -20,6 +20,12 @@ class AbsensiGuru extends Model
         'jam_keluar',
         'status',
         'keterangan',
+        'lat_masuk',
+        'lng_masuk',
+        'jarak_masuk',
+        'lat_keluar',
+        'lng_keluar',
+        'jarak_keluar',
     ];
 
     public function user()

@@ -107,8 +107,14 @@
                     <ul class="pl-4 space-y-1 text-white/90">
                         <li>
                             <a href="{{ Route::has('admin.spp.index') ? route('admin.spp.index') : '#' }}" 
-                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.spp*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
-                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.spp*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Catat SPP Bulanan
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ (request()->routeIs('admin.spp*') && !request()->routeIs('admin.spp.audit')) ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ (request()->routeIs('admin.spp*') && !request()->routeIs('admin.spp.audit')) ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Catat SPP Bulanan
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ Route::has('admin.spp.audit') ? route('admin.spp.audit') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.spp.audit') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.spp.audit') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Audit Trail SPP
                             </a>
                         </li>
                     </ul>
