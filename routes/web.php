@@ -10,7 +10,9 @@ use App\Http\Controllers\Admin\KelasController;
 use App\Http\Controllers\Admin\MapelController;
 use App\Http\Controllers\Admin\SppController;
 use App\Http\Controllers\Admin\JadwalController;
-use App\Http\Controllers\Admin\DashboardController; // <--- DITAMBAHKAN UNTUK DASHBOARD ADMIN DINAMIS
+use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\KalenderAkademikController;
+use App\Http\Controllers\AbsenSiswaController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AbsensiGuruController;
 use App\Models\User;
@@ -56,7 +58,6 @@ Route::middleware('auth')->group(function () {
 
 // ROUTE KHUSUS ADMIN
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
-    // Dashboard Admin menggunakan DashboardController agar data real dari database
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     
     Route::resource('users', UserController::class);
@@ -65,10 +66,19 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::resource('kelas', KelasController::class);
     Route::resource('mapel', MapelController::class);
 
-    // RUTE JADWAL MENGAJAR GURU (ADMIN)
     if (class_exists(JadwalController::class)) {
         Route::resource('jadwal', JadwalController::class);
     }
+
+    Route::post('/jadwal/{jadwal}/pengganti', [JadwalController::class, 'storePengganti'])->name('jadwal.pengganti.store');
+    Route::delete('/jadwal-pengganti/{pengganti}', [JadwalController::class, 'destroyPengganti'])->name('jadwal.pengganti.destroy');
+
+    Route::get('/kalender', [KalenderAkademikController::class, 'index'])->name('kalender.index');
+    Route::post('/kalender/libur', [KalenderAkademikController::class, 'storeLibur'])->name('kalender.libur.store');
+    Route::post('/kalender/libur-tetap', [KalenderAkademikController::class, 'isiLiburTetap'])->name('kalender.libur.tetap');
+    Route::delete('/kalender/libur/{libur}', [KalenderAkademikController::class, 'destroyLibur'])->name('kalender.libur.destroy');
+    Route::post('/kalender/periode', [KalenderAkademikController::class, 'storePeriode'])->name('kalender.periode.store');
+    Route::delete('/kalender/periode/{periode}', [KalenderAkademikController::class, 'destroyPeriode'])->name('kalender.periode.destroy');
 
     Route::get('/absen', [AbsensiGuruController::class, 'rekapAdminIndex'])->name('absen');
     Route::get('/spp', [SppController::class, 'index'])->name('spp.index');
@@ -81,25 +91,16 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
 
 // ROUTE KHUSUS GURU
 Route::middleware(['auth', 'role:guru'])->prefix('guru')->name('guru.')->group(function () {
-    // 1. Dashboard Guru
     Route::get('/dashboard', [AbsensiGuruController::class, 'dashboard'])->name('dashboard');
 
-    // 2. Absensi Guru Mandiri (Datang/Pulang)
     Route::get('/absen', [AbsensiGuruController::class, 'presensiGuruView'])->name('absen');
     Route::post('/absen', [AbsensiGuruController::class, 'store'])->name('absen.store');
 
-    // 3. Absensi Siswa (Auto-Fill Kelas & Mapel)
-    Route::get('/absen-siswa', [AbsensiGuruController::class, 'formAbsenSiswa'])->name('absen-siswa');
-    Route::post('/absen/sesi', [AbsensiGuruController::class, 'simpanSesi'])->name('absen.simpanSesi');
-    Route::get('/absen/siswa/dashboard', [AbsensiGuruController::class, 'dashboardAbsenSiswa'])->name('absen.siswa.dashboard');
-    Route::get('/absen/siswa', [AbsensiGuruController::class, 'dashboardAbsenSiswa'])->name('absen.siswa');
-    Route::post('/absen/siswa/batch', [AbsensiGuruController::class, 'simpanAbsenSiswaBatch'])->name('absen.siswa.batch');
+    Route::get('/absen-siswa/{jadwal}', [AbsenSiswaController::class, 'form'])->name('absen-siswa.form');
+    Route::post('/absen-siswa/{jadwal}', [AbsenSiswaController::class, 'simpan'])->name('absen-siswa.simpan');
 
-    // 4. Rekap Absen Siswa
-    Route::get('/rekap-siswa', [AbsensiGuruController::class, 'rekapSiswaIndex'])->name('rekap-siswa');
-
-    // 5. Hapus Rekap Absen Siswa (per siswa, berdasarkan filter kelas/bulan/tahun aktif)
-    Route::delete('/rekap-siswa/{siswa}', [AbsensiGuruController::class, 'hapusRekapSiswa'])->name('rekap-siswa.hapus');
+    Route::get('/rekap-siswa', [AbsenSiswaController::class, 'rekap'])->name('rekap-siswa');
+    Route::delete('/rekap-siswa/hari', [AbsenSiswaController::class, 'hapusHari'])->name('rekap-siswa.hapus-hari');
 });
 
 require __DIR__.'/auth.php';

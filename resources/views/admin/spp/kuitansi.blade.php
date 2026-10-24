@@ -13,14 +13,17 @@
         }
     </style>
 </head>
-<body class="bg-slate-100 font-sans text-slate-800 antialiased p-4 sm:p-8">
+<body class="bg-slate-100 font-sans text-slate-800 antialiased {{ ($embed ?? false) ? 'p-3' : 'p-4 sm:p-8' }}">
 
-    <div class="no-print max-w-3xl mx-auto mb-4 flex justify-between items-center">
-        <a href="{{ route('admin.spp.index') }}" class="text-xs font-semibold text-slate-600 hover:text-slate-900">&larr; Kembali</a>
-        <button onclick="window.print()" class="px-5 py-2.5 bg-[#24B9A1] hover:bg-[#1DA38D] text-white text-xs font-semibold rounded-xl shadow">
-            Cetak Kuitansi
-        </button>
-    </div>
+    @unless($embed ?? false)
+        {{-- Halaman mandiri (dibuka langsung lewat URL). Di dalam modal, tombol ini disediakan oleh modal. --}}
+        <div class="no-print max-w-3xl mx-auto mb-4 flex justify-between items-center">
+            <a href="{{ route('admin.spp.index') }}" class="text-xs font-semibold text-slate-600 hover:text-slate-900">&larr; Kembali</a>
+            <button onclick="window.print()" class="px-5 py-2.5 bg-[#24B9A1] hover:bg-[#1DA38D] text-white text-xs font-semibold rounded-xl shadow">
+                Cetak Kuitansi
+            </button>
+        </div>
+    @endunless
 
     <div class="kertas max-w-3xl mx-auto bg-white p-8 sm:p-10 rounded-2xl shadow-xl border border-slate-200">
         <div class="flex items-center gap-4 pb-4 border-b-2 border-slate-800">

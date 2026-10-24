@@ -87,7 +87,10 @@ class SppController extends Controller
             ]);
         });
 
-        return redirect()->back()->with('success', 'Pembayaran SPP berhasil dicatat! No. Kuitansi: ' . $spp->no_transaksi);
+        return redirect()->back()
+            ->with('success', 'Pembayaran SPP berhasil dicatat! No. Kuitansi: ' . $spp->no_transaksi)
+            ->with('kuitansi_id', $spp->id) // otomatis dibuka di modal
+            ->with('kuitansi_no', $spp->no_transaksi);
     }
 
     /**
@@ -145,7 +148,10 @@ class SppController extends Controller
     {
         $spp->load(['siswa', 'admin']);
 
-        return view('admin.spp.kuitansi', compact('spp'));
+        // ?embed=1 -> dipakai di dalam modal (iframe): tanpa tombol "Kembali"
+        $embed = request()->boolean('embed');
+
+        return view('admin.spp.kuitansi', compact('spp', 'embed'));
     }
 
     /**

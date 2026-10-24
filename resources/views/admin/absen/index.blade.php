@@ -167,13 +167,13 @@
                                         @if($absen->lat_masuk !== null)
                                             <a href="https://www.google.com/maps?q={{ $absen->lat_masuk }},{{ $absen->lng_masuk }}" target="_blank" rel="noopener"
                                                class="text-[#138A73] hover:underline" title="Lihat lokasi absen masuk di peta">
-                                                <i class="fa-solid fa-location-dot"></i> Masuk {{ $absen->jarak_masuk !== null ? $absen->jarak_masuk . ' m' : '' }}
+                                                <i class="fa-solid fa-location-dot"></i> Masuk {{ $absen->jarak_masuk !== null ? \App\Support\Geofence::format((int) $absen->jarak_masuk) : '' }}
                                             </a>
                                         @endif
                                         @if($absen->lat_keluar !== null)
                                             <a href="https://www.google.com/maps?q={{ $absen->lat_keluar }},{{ $absen->lng_keluar }}" target="_blank" rel="noopener"
                                                class="text-blue-600 hover:underline block" title="Lihat lokasi absen pulang di peta">
-                                                <i class="fa-solid fa-location-dot"></i> Pulang {{ $absen->jarak_keluar !== null ? $absen->jarak_keluar . ' m' : '' }}
+                                                <i class="fa-solid fa-location-dot"></i> Pulang {{ $absen->jarak_keluar !== null ? \App\Support\Geofence::format((int) $absen->jarak_keluar) : '' }}
                                             </a>
                                         @endif
                                         @if($absen->lat_masuk === null && $absen->lat_keluar === null)

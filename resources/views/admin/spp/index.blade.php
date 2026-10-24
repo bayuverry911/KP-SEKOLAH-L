@@ -63,7 +63,7 @@
                                 <label class="block font-medium text-slate-500 mb-1">Untuk Bulan</label>
                                 <select name="bulan" required class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#24B9A1]">
                                     @foreach($daftarBulan as $bulan)
-                                        <option value="{{ $bulan }}" {{ Carbon\Carbon::now()->translatedFormat('F') == $bulan ? 'selected' : '' }}>{{ $bulan }}</option>
+                                        <option value="{{ $bulan }}" {{ (\Carbon\Carbon::now()->translatedFormat('F') === $bulan) ? 'selected' : '' }}>{{ $bulan }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -114,7 +114,7 @@
                             <select name="bulan" class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
                                 <option value="">Semua Bulan</option>
                                 @foreach($daftarBulan as $b)
-                                    <option value="{{ $b }}" {{ request('bulan') == $b ? 'selected' : '' }}>{{ $b }}</option>
+                                    <option value="{{ $b }}" {{ (request('bulan') === $b) ? 'selected' : '' }}>{{ $b }}</option>
                                 @endforeach
                             </select>
 
@@ -169,10 +169,12 @@
                                         <td class="p-3 text-slate-500">{{ $item->admin->name ?? '-' }}</td>
                                         <td class="p-3">
                                             <div class="flex items-center justify-center gap-1.5">
-                                                <a href="{{ route('admin.spp.kuitansi', $item->id) }}" target="_blank" title="Cetak Kuitansi"
-                                                   class="px-2.5 py-1.5 bg-teal-50 text-[#138A73] rounded-lg hover:bg-teal-100 transition">
+                                                <button type="button" title="Lihat / Cetak Kuitansi"
+                                                        class="btn-kuitansi px-2.5 py-1.5 bg-teal-50 text-[#138A73] rounded-lg hover:bg-teal-100 transition"
+                                                        data-url="{{ route('admin.spp.kuitansi', ['spp' => $item->id, 'embed' => 1]) }}"
+                                                        data-no="{{ $item->no_transaksi }}">
                                                     <i class="fa-solid fa-print"></i>
-                                                </a>
+                                                </button>
                                                 <button type="button" title="Koreksi Data"
                                                         class="btn-edit-spp px-2.5 py-1.5 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition"
                                                         data-id="{{ $item->id }}"
@@ -211,13 +213,39 @@
         </main>
     </div>
 
+    <!-- MODAL KUITANSI (lihat / cetak tanpa pindah tab) -->
+    <div id="modalKuitansi" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 sm:p-6">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">Kuitansi Pembayaran SPP</h3>
+                    <p class="text-[11px] text-slate-500">No. <span id="kuitansiNo" class="font-mono font-bold text-slate-700"></span></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btnCetakKuitansi" class="px-4 py-2 bg-[#24B9A1] hover:bg-[#1DA38D] text-white text-xs font-semibold rounded-xl shadow transition">
+                        <i class="fa-solid fa-print mr-1"></i> Cetak
+                    </button>
+                    <button type="button" id="btnTutupKuitansi" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-xl transition">
+                        <i class="fa-solid fa-xmark mr-1"></i> Tutup
+                    </button>
+                </div>
+            </div>
+            <div class="relative flex-1 bg-slate-100">
+                <div id="kuitansiLoading" class="absolute inset-0 flex items-center justify-center text-xs text-slate-500">
+                    <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat kuitansi...
+                </div>
+                <iframe id="frameKuitansi" title="Kuitansi SPP" class="relative w-full h-full border-0 bg-transparent"></iframe>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL KOREKSI SPP -->
     <div id="modalEditSpp" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
         <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl w-full max-w-lg">
             <h3 class="text-lg font-bold text-slate-900 mb-1">Koreksi Data SPP</h3>
             <p class="text-xs text-slate-500 mb-4">No. Kuitansi: <span id="editNo" class="font-mono font-bold text-slate-800"></span></p>
 
-            <form id="formEditSpp" method="POST" class="space-y-3 text-xs" data-url="{{ route('admin.spp.update', '__ID__') }}">
+            <form id="formEditSpp" method="POST" class="space-y-3 text-xs" data-url="{{ route('admin.spp.update', 'REPLACE_ID') }}">
                 @csrf
                 @method('PUT')
                 <div>
@@ -249,8 +277,44 @@
         </div>
     </div>
 
+    <!-- Script Javascript -->
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            // ===== KUITANSI DI MODAL =====
+            const modalKuitansi = document.getElementById('modalKuitansi');
+            const frameKuitansi = document.getElementById('frameKuitansi');
+            const loadingKuitansi = document.getElementById('kuitansiLoading');
+
+            window.bukaKuitansi = function(url, nomor) {
+                document.getElementById('kuitansiNo').textContent = nomor || '';
+                loadingKuitansi.classList.remove('hidden');
+                frameKuitansi.classList.add('invisible');
+                frameKuitansi.src = url;
+                modalKuitansi.classList.remove('hidden');
+            }
+            
+            function tutupKuitansi() {
+                modalKuitansi.classList.add('hidden');
+                frameKuitansi.src = 'about:blank';
+            }
+
+            frameKuitansi.addEventListener('load', () => {
+                if (frameKuitansi.src && frameKuitansi.src !== 'about:blank') {
+                    loadingKuitansi.classList.add('hidden');
+                    frameKuitansi.classList.remove('invisible');
+                }
+            });
+            document.querySelectorAll('.btn-kuitansi').forEach(btn => {
+                btn.addEventListener('click', () => bukaKuitansi(btn.dataset.url, btn.dataset.no));
+            });
+            document.getElementById('btnTutupKuitansi').addEventListener('click', tutupKuitansi);
+            document.getElementById('btnCetakKuitansi').addEventListener('click', () => {
+                frameKuitansi.contentWindow.focus();
+                frameKuitansi.contentWindow.print();
+            });
+            modalKuitansi.addEventListener('click', e => { if (e.target === modalKuitansi) tutupKuitansi(); });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modalKuitansi.classList.contains('hidden')) tutupKuitansi(); });
+
             // ===== KOREKSI SPP =====
             const modal = document.getElementById('modalEditSpp');
             const formEdit = document.getElementById('formEditSpp');
@@ -258,7 +322,7 @@
 
             document.querySelectorAll('.btn-edit-spp').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    formEdit.action = urlUpdate.replace('__ID__', btn.dataset.id);
+                    formEdit.action = urlUpdate.replace('REPLACE_ID', btn.dataset.id);
                     document.getElementById('editNo').textContent = btn.dataset.no;
                     document.getElementById('editNominal').value = btn.dataset.nominal;
                     document.getElementById('editMetode').value = btn.dataset.metode;
@@ -307,5 +371,13 @@
             });
         });
     </script>
+
+    @if(session('kuitansi_id'))
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            bukaKuitansi('{!! route("admin.spp.kuitansi", ["spp" => session("kuitansi_id"), "embed" => 1]) !!}', '{{ session("kuitansi_no") }}');
+        });
+    </script>
+    @endif
 </body>
 </html>

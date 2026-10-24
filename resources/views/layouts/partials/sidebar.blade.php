@@ -74,6 +74,12 @@
                             </a>
                         </li>
                         <li>
+                            <a href="{{ Route::has('admin.kalender.index') ? route('admin.kalender.index') : '#' }}" 
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.kalender.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.kalender.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Kalender Akademik
+                            </a>
+                        </li>
+                        <li>
                             <a href="{{ Route::has('admin.siswa.index') ? route('admin.siswa.index') : '#' }}" 
                                class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.siswa.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
                                 <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.siswa.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Data Siswa
@@ -151,12 +157,6 @@
                         <span>Ruang Kelas</span>
                     </div>
                     <ul class="pl-4 space-y-1 text-white/90">
-                        <li>
-                            <a href="{{ Route::has('guru.absen-siswa') ? route('guru.absen-siswa') : '#' }}" 
-                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('guru.absen-siswa') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
-                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('guru.absen-siswa') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Absen Siswa
-                            </a>
-                        </li>
                         <li>
                             <a href="{{ Route::has('guru.rekap-siswa') ? route('guru.rekap-siswa') : '#' }}" 
                                class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('guru.rekap-siswa') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">

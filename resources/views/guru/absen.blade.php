@@ -46,11 +46,9 @@
                             @if(optional($absensiHariIni)->status)
                                 <span class="px-3 py-1 rounded-full font-bold 
                                     {{ $absensiHariIni->status == 'Hadir' ? 'bg-emerald-100 text-emerald-700' : '' }}
-                                    {{ $absensiHariIni->status == 'Izin' ? 'bg-amber-100 text-amber-700' : '' }}
-                                    {{ $absensiHariIni->status == 'Sakit' ? 'bg-rose-100 text-rose-700' : '' }}">
+                                    {{ $absensiHariIni->status == 'Izin' ? 'bg-amber-100 text-amber-700' : '' }} {{$absensiHariIni->status == 'Sakit' ? 'bg-rose-100 text-rose-700' : '' }}">
                                     {{ $absensiHariIni->status }} 
-                                    @if($absensiHariIni->jam_masuk)
-                                        ({{ \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i') }} WIB)
+                                    @if($absensiHariIni->jam_masuk) ({{ \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i') }} WIB)
                                     @endif
                                 </span>
                             @else
@@ -58,6 +56,30 @@
                             @endif
                         </div>
                     </div>
+
+                    <!-- RIWAYAT JARAK PRESENSI HARI INI -->
+                    @if(optional($absensiHariIni)->jarak_masuk !== null or optional($absensiHariIni)->jarak_keluar !== null)
+                        <div class="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            @if($absensiHariIni->jarak_masuk !== null)
+                                <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
+                                    <i class="fa-solid fa-location-dot text-emerald-600 text-lg"></i>
+                                    <div>
+                                        <p class="font-semibold text-emerald-800">Jarak saat presensi masuk</p>
+                                        <p class="text-emerald-700 font-bold">{{ \App\Support\Geofence::format((int) $absensiHariIni->jarak_masuk) }} dari sekolah</p>
+                                    </div>
+                                </div>
+                            @endif
+                            @if($absensiHariIni->jarak_keluar !== null)
+                                <div class="p-3 rounded-2xl bg-blue-50 border border-blue-200 flex items-center gap-3">
+                                    <i class="fa-solid fa-location-dot text-blue-600 text-lg"></i>
+                                    <div>
+                                        <p class="font-semibold text-blue-800">Jarak saat presensi pulang</p>
+                                        <p class="text-blue-700 font-bold">{{ \App\Support\Geofence::format((int) $absensiHariIni->jarak_keluar) }} dari sekolah</p>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
 
                     <!-- FORM PRESENSI -->
                     <form id="form_presensi" action="{{ route('guru.absen.store') }}" method="POST" class="space-y-5">
@@ -107,11 +129,13 @@
                         <!-- STATUS LOKASI GPS -->
                         <div id="kotak_lokasi" class="p-4 rounded-2xl border bg-slate-50 border-slate-200 text-xs flex items-start gap-3">
                             <i id="ikon_lokasi" class="fa-solid fa-location-crosshairs text-slate-400 mt-0.5"></i>
-                            <div class="flex-1">
+                            <div class="flex-1 w-full">
                                 <p id="teks_lokasi" class="font-semibold text-slate-600">Mencari lokasi Anda...</p>
-                                <p id="detail_lokasi" class="text-[11px] text-slate-400 mt-0.5">Izinkan akses lokasi pada browser. Lokasi diperlukan untuk presensi Hadir &amp; Pulang (radius {{ config('sekolah.radius_meter') }} m dari sekolah).</p>
+                                <div id="detail_lokasi" class="text-[11px] text-slate-500 mt-1 w-full">
+                                    Izinkan akses lokasi pada browser. Lokasi diperlukan untuk presensi Hadir &amp; Pulang (radius {{ \App\Support\Geofence::format((int) config('sekolah.radius_meter')) }} dari sekolah).
+                                </div>
                             </div>
-                            <button type="button" id="btn_ulang_lokasi" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 hover:bg-slate-100 transition">
+                            <button type="button" id="btn_ulang_lokasi" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 hover:bg-slate-100 transition whitespace-nowrap">
                                 <i class="fa-solid fa-rotate"></i> Perbarui
                             </button>
                         </div>
@@ -125,7 +149,7 @@
         </main>
     </div>
 
-    <!-- Konfigurasi lokasi sekolah (dibaca oleh JavaScript di bawah) -->
+    <!-- Konfigurasi lokasi sekolah -->
     <div id="gps-config" class="hidden"
          data-lat="{{ config('sekolah.latitude') }}"
          data-lng="{{ config('sekolah.longitude') }}"
@@ -141,8 +165,6 @@
         }, 1000);
 
         // ===== LOKASI GPS =====
-        // Catatan: pengecekan di sini hanya untuk kenyamanan pengguna.
-        // Validasi yang sebenarnya (dan tidak bisa dilewati) dilakukan di server.
         const cfg = document.getElementById('gps-config').dataset;
         const SEKOLAH = {
             lat: cfg.lat === '' ? null : parseFloat(cfg.lat),
@@ -161,6 +183,11 @@
         let lokasiOk = false;
         let watchId = null;
 
+        function fmtJarak(m) {
+            if (m < 1000) return m + ' m';
+            return (m / 1000).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + ' km';
+        }
+
         function hitungJarak(lat1, lng1, lat2, lng2) {
             const R = 6371000, rad = d => d * Math.PI / 180;
             const dLat = rad(lat2 - lat1), dLng = rad(lng2 - lng1);
@@ -174,17 +201,17 @@
             return !!pulang || (status ? status.value === 'Hadir' : true);
         }
 
-        function tampil(warna, kelasIkon, judul, ket) {
+        function tampil(warna, kelasIkon, judul, ketHTML) {
             const tema = {
                 abu:   ['bg-slate-50 border-slate-200', 'text-slate-400', 'text-slate-600'],
                 hijau: ['bg-emerald-50 border-emerald-200', 'text-emerald-600', 'text-emerald-700'],
                 merah: ['bg-rose-50 border-rose-200', 'text-rose-600', 'text-rose-700'],
             }[warna];
-            kotak.className = 'p-4 rounded-2xl border text-xs flex items-start gap-3 ' + tema[0];
+            kotak.className = 'p-4 rounded-2xl border flex items-start gap-3 w-full ' + tema[0];
             ikon.className = 'fa-solid ' + kelasIkon + ' mt-0.5 ' + tema[1];
-            teks.className = 'font-semibold ' + tema[2];
+            teks.className = 'font-semibold text-sm ' + tema[2];
             teks.textContent = judul;
-            detail.textContent = ket;
+            detail.innerHTML = ketHTML;
         }
 
         function perbaruiTombol() {
@@ -210,17 +237,60 @@
 
             const jarak = Math.round(hitungJarak(SEKOLAH.lat, SEKOLAH.lng, latitude, longitude));
             const akurasi = Math.round(accuracy);
-            const info = '(Posisi terdeteksi: ' + latitude.toFixed(5) + ', ' + longitude.toFixed(5) + ')';
+            const infoKoordinat = `(Posisi terdeteksi: ${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
 
             if (accuracy > SEKOLAH.akurasi) {
                 lokasiOk = false;
-                tampil('merah', 'fa-signal', 'Akurasi GPS terlalu rendah (±' + akurasi + ' m, maksimal ' + SEKOLAH.akurasi + ' m)', 'Perkiraan jarak ke sekolah ±' + jarak + ' m. Perangkat tanpa chip GPS (laptop/PC) biasanya akurasinya rendah. Gunakan HP dengan GPS aktif di area terbuka, lalu tekan Perbarui. ' + info);
+                tampil('merah', 'fa-signal', `Akurasi GPS Terlalu Rendah (±${akurasi} m)`, `
+                    <div class="mt-2 space-y-1 bg-white/60 p-2.5 rounded-lg border border-rose-200 text-slate-700 w-full">
+                        <div class="flex justify-between items-center">
+                            <span>Perkiraan Jarak Anda:</span>
+                            <span class="font-bold text-rose-600">±${fmtJarak(jarak)}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span>Batas Akurasi Diterima:</span>
+                            <span class="font-bold text-emerald-600">Maksimal ${SEKOLAH.akurasi} m</span>
+                        </div>
+                    </div>
+                    <p class="mt-2 leading-relaxed">Perangkat tanpa chip GPS (seperti laptop/PC) biasanya memiliki akurasi yang rendah. Silakan gunakan HP dengan fitur GPS aktif di area terbuka, lalu tekan tombol <b>Perbarui</b>.</p>
+                    <p class="mt-1 text-[10px] text-slate-400 italic">${infoKoordinat}</p>
+                `);
             } else if (jarak > SEKOLAH.radius) {
                 lokasiOk = false;
-                tampil('merah', 'fa-location-dot', 'Anda berada ±' + jarak + ' m dari sekolah', 'Presensi Hadir & Pulang hanya bisa dilakukan dalam radius ' + SEKOLAH.radius + ' m. (Izin / Sakit tidak dibatasi lokasi.) ' + info);
+                const selisih = jarak - SEKOLAH.radius;
+                tampil('merah', 'fa-location-dot', 'Anda Berada di Luar Area Presensi', `
+                    <div class="mt-2 space-y-1 bg-white/60 p-2.5 rounded-lg border border-rose-200 text-slate-700 w-full">
+                        <div class="flex justify-between items-center">
+                            <span>Jarak Anda Saat Ini:</span>
+                            <span class="font-bold text-rose-600">${fmtJarak(jarak)}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span>Batas Radius Maksimal:</span>
+                            <span class="font-bold text-emerald-600">${fmtJarak(SEKOLAH.radius)}</span>
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-rose-200/70 font-semibold text-rose-600 text-center">
+                            Anda harus mendekati sekolah sejauh ${fmtJarak(selisih)} lagi.
+                        </div>
+                    </div>
+                    <p class="mt-2 leading-relaxed">Presensi status Hadir dan Pulang hanya dapat dilakukan jika Anda berada di dalam kawasan sekolah. (Status Izin/Sakit tidak dibatasi lokasi).</p>
+                    <p class="mt-1 text-[10px] text-slate-400 italic">${infoKoordinat}</p>
+                `);
             } else {
                 lokasiOk = true;
-                tampil('hijau', 'fa-circle-check', 'Lokasi sesuai: ±' + jarak + ' m dari sekolah', 'Akurasi GPS ±' + akurasi + ' m. Anda berada di dalam radius presensi. ' + info);
+                tampil('hijau', 'fa-circle-check', 'Lokasi Sesuai Kriteria Presensi', `
+                    <div class="mt-2 space-y-1 bg-white/60 p-2.5 rounded-lg border border-emerald-200 text-slate-700 w-full">
+                        <div class="flex justify-between items-center">
+                            <span>Jarak Anda Saat Ini:</span>
+                            <span class="font-bold text-emerald-700">${fmtJarak(jarak)}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span>Akurasi GPS:</span>
+                            <span class="font-bold text-emerald-700">±${akurasi} m</span>
+                        </div>
+                    </div>
+                    <p class="mt-2 leading-relaxed">Anda sudah berada di dalam jangkauan area sekolah dan dapat melakukan proses absensi.</p>
+                    <p class="mt-1 text-[10px] text-emerald-600/70 italic">${infoKoordinat}</p>
+                `);
             }
             perbaruiTombol();
         }

@@ -29,4 +29,7 @@ return [
 
     // true = absen Hadir/Pulang WAJIB berada dalam radius sekolah
     'gps_wajib' => filter_var(env('SEKOLAH_GPS_WAJIB', true), FILTER_VALIDATE_BOOLEAN),
+
+    // Tombol "Mulai Absen" siswa aktif X menit SEBELUM jam mulai jadwal (0 = tepat jam mulai).
+    'absen_siswa_toleransi_menit' => (int) env('ABSEN_SISWA_TOLERANSI_MENIT', 0),
 ];

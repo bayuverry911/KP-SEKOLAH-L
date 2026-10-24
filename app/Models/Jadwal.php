@@ -18,4 +18,9 @@ class Jadwal extends Model
         'jam_masuk',
         'jam_selesai',
     ];
+
+    public function penggantis()
+    {
+        return $this->hasMany(JadwalPengganti::class, 'jadwal_id');
+    }
 }

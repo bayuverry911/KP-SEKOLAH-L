@@ -119,6 +119,12 @@
                                     <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.jadwal.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Jadwal Mengajar
                                 </a>
                             </li>
+                        <li>
+                            <a href="{{ Route::has('admin.kalender.index') ? route('admin.kalender.index') : '#' }}" 
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.kalender.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.kalender.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Kalender Akademik
+                            </a>
+                        </li>
                             <li>
                                 <a href="{{ Route::has('admin.siswa.index') ? route('admin.siswa.index') : '#' }}" 
                                    class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.siswa.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
@@ -233,6 +239,12 @@
                         </div>
                     @endif
 
+                    @if(session('error') || $errors->any())
+                        <div class="p-3 mb-4 bg-rose-100 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span>{{ session('error') ?? $errors->first() }}</span>
+                        </div>
+                    @endif
                     <!-- FORM INPUT JADWAL BARU -->
                     <form action="{{ route('admin.jadwal.store') }}" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs mb-8 p-5 bg-slate-50 border border-slate-100 rounded-xl">
                         @csrf
@@ -313,8 +325,16 @@
                                         <td class="p-3">{{ $j->hari }}</td>
                                         <td class="p-3 font-bold text-emerald-600">{{ $j->jam_masuk }}</td>
                                         <td class="p-3 font-bold text-rose-600">{{ $j->jam_selesai }}</td>
-                                        <td class="p-3">
-                                            <form action="{{ route('admin.jadwal.destroy', $j->id) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus jadwal ini?')">
+                                        <td class="p-3 whitespace-nowrap">
+                                            <button type="button"
+                                                    class="btn-pengganti mr-3 text-amber-600 hover:text-amber-800 font-semibold inline-flex items-center gap-1"
+                                                    data-url="{{ route('admin.jadwal.pengganti.store', $j->id) }}"
+                                                    data-info="{{ $j->kelas }} - {{ $j->mapel }} ({{ $j->hari }}, {{ substr($j->jam_masuk, 0, 5) }}-{{ substr($j->jam_selesai, 0, 5) }}) - {{ $j->nama_guru }}"
+                                                    data-hari="{{ $j->hari }}"
+                                                    data-guru="{{ $j->guru_id }}">
+                                                <i class="fa-solid fa-user-clock text-xs"></i> Pengganti
+                                            </button>
+                                            <form action="{{ route('admin.jadwal.destroy', $j->id) }}" method="POST" class="inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus jadwal ini?')">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit" class="text-rose-600 hover:text-rose-800 font-semibold inline-flex items-center gap-1">
@@ -331,12 +351,127 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- DAFTAR GURU PENGGANTI -->
+                    <div class="mt-8">
+                        <h3 class="text-sm font-bold text-slate-800 mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-user-clock text-amber-500"></i> Guru Pengganti yang Sudah Di-plot
+                        </h3>
+                        <p class="text-[11px] text-slate-500 mb-3">Jadwal tampil otomatis di dashboard guru pengganti pada tanggal yang dipilih. Guru asli tidak dapat mengabsen jadwal tersebut pada tanggal itu.</p>
+                        <div class="overflow-x-auto rounded-xl border border-slate-200">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-amber-500 text-white uppercase font-bold">
+                                    <tr>
+                                        <th class="p-3">Tanggal</th>
+                                        <th class="p-3">Kelas / Mapel</th>
+                                        <th class="p-3">Jam</th>
+                                        <th class="p-3">Guru Asli</th>
+                                        <th class="p-3">Guru Pengganti</th>
+                                        <th class="p-3">Keterangan</th>
+                                        <th class="p-3">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 text-slate-600">
+                                    @forelse($penggantis as $g)
+                                        <tr class="hover:bg-slate-50">
+                                            <td class="p-3 font-semibold text-slate-800">{{ $g->tanggal->format('d/m/Y') }}</td>
+                                            <td class="p-3">{{ $g->jadwal->kelas ?? '-' }} - {{ $g->jadwal->mapel ?? '-' }}</td>
+                                            <td class="p-3">{{ $g->jadwal ? substr($g->jadwal->jam_masuk, 0, 5) . ' - ' . substr($g->jadwal->jam_selesai, 0, 5) : '-' }}</td>
+                                            <td class="p-3">{{ $g->jadwal->nama_guru ?? '-' }}</td>
+                                            <td class="p-3 font-bold text-amber-700">{{ $g->nama_guru }}</td>
+                                            <td class="p-3">{{ $g->keterangan ?: '-' }}</td>
+                                            <td class="p-3">
+                                                <form action="{{ route('admin.jadwal.pengganti.destroy', $g->id) }}" method="POST" onsubmit="return confirm('Batalkan penugasan guru pengganti ini?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="text-rose-600 hover:text-rose-800 font-semibold inline-flex items-center gap-1">
+                                                        <i class="fa-solid fa-xmark text-xs"></i> Batalkan
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr><td colspan="7" class="p-4 text-center text-slate-400 italic">Belum ada guru pengganti yang di-plot.</td></tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
 
+    <!-- MODAL PLOT GURU PENGGANTI -->
+    <div id="modalPengganti" class="hidden fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl w-full max-w-md">
+            <h3 class="text-lg font-bold text-slate-900 mb-1">Plot Guru Pengganti</h3>
+            <p id="infoPengganti" class="text-xs text-slate-500 mb-4"></p>
+
+            <form id="formPengganti" method="POST" class="space-y-3 text-xs">
+                @csrf
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">Tanggal <span id="hintHari" class="font-normal text-slate-400"></span></label>
+                    <input type="date" name="tanggal" id="tanggalPengganti" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#19A389]">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">Guru Pengganti</label>
+                    <select name="guru_id" id="guruPengganti" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#19A389]">
+                        <option value="">-- Pilih Guru --</option>
+                        @foreach($gurus as $g)
+                            <option value="{{ $g->id }}">{{ $g->nama ?? $g->nama_guru }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">Keterangan (opsional)</label>
+                    <input type="text" name="keterangan" maxlength="255" placeholder="Contoh: Guru asli sakit" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#19A389]">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" id="btnBatalPengganti" class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-semibold hover:bg-slate-200 transition">Batal</button>
+                    <button type="submit" class="px-5 py-2.5 bg-[#19A389] text-white rounded-xl font-semibold hover:bg-[#138A73] transition">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
+        // ===== MODAL GURU PENGGANTI =====
+        (function () {
+            const modal = document.getElementById('modalPengganti');
+            const form = document.getElementById('formPengganti');
+            const tgl = document.getElementById('tanggalPengganti');
+            const guruSel = document.getElementById('guruPengganti');
+            const hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            let hariJadwal = '';
+
+            const today = new Date();
+            tgl.min = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+            document.querySelectorAll('.btn-pengganti').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    form.action = btn.dataset.url;
+                    hariJadwal = btn.dataset.hari;
+                    document.getElementById('infoPengganti').textContent = btn.dataset.info;
+                    document.getElementById('hintHari').textContent = '(harus hari ' + hariJadwal + ')';
+                    tgl.value = '';
+                    Array.from(guruSel.options).forEach(o => { o.hidden = (o.value !== '' && o.value === btn.dataset.guru); });
+                    guruSel.value = '';
+                    modal.classList.remove('hidden');
+                });
+            });
+
+            tgl.addEventListener('change', () => {
+                if (!tgl.value) return;
+                const nama = hari[new Date(tgl.value + 'T00:00:00').getDay()];
+                tgl.setCustomValidity(nama === hariJadwal ? '' : 'Tanggal ini hari ' + nama + ', jadwal hari ' + hariJadwal + '.');
+                tgl.reportValidity();
+            });
+
+            document.getElementById('btnBatalPengganti').addEventListener('click', () => modal.classList.add('hidden'));
+            modal.addEventListener('click', e => { if (e.target === modal) modal.classList.add('hidden'); });
+        })();
+
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobileOverlay');

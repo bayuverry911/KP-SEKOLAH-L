@@ -183,21 +183,6 @@
                         <ul class="pl-4 space-y-1 text-white/90">
 
                             <li>
-                                <a href="{{ Route::has('guru.absen-siswa') ? route('guru.absen-siswa') : '#' }}"
-                                   class="hover:text-white flex items-center gap-2
-                                          px-4 py-2 transition-all
-                                          rounded-l-full rounded-r-none
-                                          {{ request()->routeIs('guru.absen-siswa')
-                                              ? 'bg-white text-[#138A73] font-bold shadow'
-                                              : 'hover:bg-white/10 rounded-r-lg' }}">
-
-                                    <span class="text-sm font-bold">•</span>
-                                    Absen Siswa
-
-                                </a>
-                            </li>
-
-                            <li>
                                 <a href="{{ Route::has('guru.rekap-siswa') ? route('guru.rekap-siswa') : '#' }}"
                                    class="hover:text-white flex items-center gap-2
                                           px-4 py-2 transition-all
@@ -340,48 +325,11 @@
             <!-- BODY -->
             <div class="px-4 sm:px-8 pb-8 space-y-6">
 
-                <!-- SUCCESS NOTIFICATION -->
-                @if(session('success'))
-
-                    <div class="p-4 bg-white/90 backdrop-blur-md
-                                border-l-4 border-[#19A389] rounded-2xl
-                                shadow-sm flex justify-between items-center
-                                transition-all animate-in fade-in">
-
-                        <div class="flex items-center gap-3">
-
-                            <div class="w-9 h-9 rounded-xl bg-emerald-100
-                                        text-[#19A389] flex items-center
-                                        justify-center font-bold flex-shrink-0">
-
-                                <i class="fa-solid fa-circle-check text-lg"></i>
-
-                            </div>
-
-                            <div>
-
-                                <h4 class="text-xs font-bold text-slate-800">
-                                    Sistem Presensi Berhasil
-                                </h4>
-
-                                <p class="text-[11px] text-slate-500 mt-0.5">
-                                    {{ session('success') }}
-                                </p>
-
-                            </div>
-
-                        </div>
-
-                        <button onclick="this.parentElement.remove()"
-                                class="text-slate-400 hover:text-slate-600
-                                       text-xs px-2 py-1">
-
-                            <i class="fa-solid fa-xmark"></i>
-
-                        </button>
-
-                    </div>
-
+                <!-- NOTIFIKASI TOAST (setelah simpan absen, tetap di dashboard) -->
+                @if(session('success') || session('error'))
+                    <div id="toastData" class="hidden"
+                         data-tipe="{{ session('success') ? 'success' : 'error' }}"
+                         data-pesan="{{ session('success') ?? session('error') }}"></div>
                 @endif
 
 
@@ -435,216 +383,167 @@
                     <div class="flex-1 space-y-6 min-w-0">
 
                         <!-- ================================================= -->
-                        <!-- KELAS MENGAJAR -->
+                        <!-- JADWAL MENGAJAR HARI INI (kartu per jadwal)       -->
                         <!-- ================================================= -->
 
                         <div>
 
-                            <h3 class="font-bold text-slate-700 text-sm mb-3">
-                                Kelas Mengajar Anda
-                            </h3>
+                            <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-1 mb-3">
+                                <h3 class="font-bold text-slate-700 text-sm">
+                                    Jadwal Mengajar Hari Ini
+                                </h3>
+                                <p class="text-[11px] font-semibold text-slate-500">
+                                    <i class="fa-regular fa-calendar mr-1 text-[#19A389]"></i>
+                                    {{ \App\Services\AbsenSiswaService::tanggalPanjang($now) }}
+                                </p>
+                            </div>
 
-                            <div class="grid grid-cols-1 sm:grid-cols-2
-                                        xl:grid-cols-3 gap-4">
+                            @if($libur)
+                                <div class="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                                    <i class="fa-solid fa-calendar-xmark"></i>
+                                    <span>Hari ini <b>libur</b>: {{ $libur->keterangan }}. Absensi siswa tidak dilakukan.</span>
+                                </div>
+                            @endif
 
-                                @forelse($kelasesWithCount as $k)
+                            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
 
-                                    <a href="{{ route('guru.absen-siswa', [
-                                            'kelas' => $k->nama_kelas,
-                                            'mapel' => $mapelGuru
-                                        ]) }}"
-                                       class="bg-gradient-to-b from-[#19A389] to-[#0D6353]
-                                              rounded-2xl p-4 text-white shadow-md
-                                              flex flex-col justify-between h-36
-                                              hover:scale-[1.02] transition-all
-                                              cursor-pointer group">
+                                @forelse($jadwalHariIni as $k)
+
+                                    @php
+                                        $aktif = $k->status === 'mulai';
+                                        $warna = match($k->status) {
+                                            'mulai'      => 'from-[#19A389] to-[#0D6353]',
+                                            'sudah'      => 'from-[#2f9e6e] to-[#1d6b4a]',
+                                            default      => 'from-slate-400 to-slate-500',
+                                        };
+                                        $label = match($k->status) {
+                                            'mulai'      => 'Mulai Absen',
+                                            'sudah'      => 'Sudah Absen',
+                                            'libur'      => 'Libur',
+                                            'digantikan' => 'Digantikan',
+                                            default      => 'Belum Waktunya',
+                                        };
+                                    @endphp
+
+                                    <div class="bg-gradient-to-b {{ $warna }} rounded-2xl p-4 text-white shadow-md
+                                                flex flex-col justify-between min-h-[10.5rem]">
 
                                         <div>
-
-                                            <div class="flex justify-between items-start">
-
-                                                <h4 class="font-bold text-sm
-                                                           group-hover:underline">
-
-                                                    Kelas {{ $k->nama_kelas }}
-
-                                                </h4>
-
-                                                <span class="text-[9px]
-                                                             bg-white/20 px-2 py-0.5
-                                                             rounded-lg font-semibold
-                                                             flex items-center gap-1">
-
-                                                    <span>Mulai Absen</span>
-
-                                                    <i class="fa-solid fa-arrow-right
-                                                              text-[10px]"></i>
-
+                                            <div class="flex justify-between items-start gap-2">
+                                                <h4 class="font-bold text-sm">Kelas {{ $k->kelas }}</h4>
+                                                <span class="text-[10px] font-semibold bg-white/20 px-2 py-0.5 rounded-lg whitespace-nowrap">
+                                                    <i class="fa-regular fa-clock mr-0.5"></i>{{ $k->jam_masuk }} - {{ $k->jam_selesai }}
                                                 </span>
-
                                             </div>
 
-                                            <p class="text-[11px] text-emerald-100 mt-1">
-
-                                                Mapel:
-                                                <b>{{ $mapelGuru }}</b>
-
+                                            <p class="text-[11px] text-white/90 mt-1">
+                                                Mapel: <b>{{ $k->mapel }}</b>
                                             </p>
 
+                                            @if($k->is_pengganti)
+                                                <p class="mt-1 inline-block text-[10px] font-bold bg-amber-400 text-amber-950 px-2 py-0.5 rounded-md">
+                                                    Guru Pengganti{{ $k->guru_asli ? ' (menggantikan ' . $k->guru_asli . ')' : '' }}
+                                                </p>
+                                            @endif
+
+                                            @if($k->diganti_oleh)
+                                                <p class="mt-1 text-[10px] font-semibold text-white/90">
+                                                    Hari ini diajar oleh {{ $k->diganti_oleh }}
+                                                </p>
+                                            @endif
                                         </div>
 
-                                        <div class="text-[11px] text-white/90 font-medium">
-
-                                            <p>
-                                                <i class="fa-solid fa-users
-                                                          text-[9px] mr-1"></i>
-
-                                                {{ $k->jumlah_murid }}
-                                                Murid Terdaftar
+                                        <div class="mt-3">
+                                            <p class="text-[10px] text-white/80 mb-2">
+                                                <i class="fa-solid fa-users text-[9px] mr-1"></i>{{ $k->jumlah_siswa }} siswa terdaftar
                                             </p>
 
-                                            <p>
-                                                <i class="fa-regular fa-user
-                                                          text-[9px] mr-1"></i>
-
-                                                Wali kelas:
-                                                {{ $guru->nama ?? Auth::user()->name }}
-                                            </p>
-
+                                            @if($aktif)
+                                                <a href="{{ route('guru.absen-siswa.form', $k->id) }}"
+                                                   class="block text-center text-xs font-bold py-2 rounded-full
+                                                          bg-emerald-200 text-emerald-900 hover:bg-emerald-100 transition">
+                                                    {{ $label }} <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i>
+                                                </a>
+                                            @else
+                                                <span class="block text-center text-xs font-bold py-2 rounded-full
+                                                             bg-white/25 text-white cursor-not-allowed">
+                                                    @if($k->status === 'sudah')<i class="fa-solid fa-circle-check mr-1"></i>@endif
+                                                    {{ $label }}
+                                                </span>
+                                            @endif
                                         </div>
 
-                                    </a>
+                                    </div>
 
                                 @empty
 
-                                    <div class="col-span-full p-6 bg-white
-                                                rounded-2xl text-center
-                                                text-slate-400 text-xs italic
-                                                border border-slate-200">
-
-                                        Belum ada data kelas mengajar
-                                        yang diatur untuk akun Anda.
-
+                                    <div class="col-span-full p-6 bg-white rounded-2xl text-center
+                                                text-slate-400 text-xs italic border border-slate-200">
+                                        Tidak ada jadwal mengajar untuk Anda hari ini.
                                     </div>
 
                                 @endforelse
 
                             </div>
 
+                            <p class="text-[10px] text-slate-400 mt-3">
+                                Absen siswa hanya dapat dimulai dari kartu ini. Tanggal otomatis hari ini dan tidak dapat diubah.
+                                Salah input? Hapus absen hari tersebut di menu Rekap Absen Siswa, lalu absen ulang.
+                            </p>
+
                         </div>
 
-
                         <!-- ================================================= -->
-                        <!-- JADWAL / SESI PEMBELAJARAN -->
+                        <!-- RINGKASAN JADWAL HARI INI (tabel)                 -->
                         <!-- ================================================= -->
 
                         <div>
 
                             <h3 class="font-bold text-slate-700 text-sm mb-3">
-                                Jadwal / Sesi Pembelajaran Hari Ini
+                                Ringkasan Sesi Pembelajaran Hari Ini
                             </h3>
 
-                            <div class="bg-white rounded-2xl shadow-sm
-                                        border border-slate-200 overflow-x-auto">
+                            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
 
-                                <table class="w-full text-left text-xs
-                                              min-w-[500px]">
+                                <table class="w-full text-left text-xs min-w-[500px]">
 
-                                    <thead class="bg-gradient-to-r
-                                                  from-[#19A389] to-[#138A73]
-                                                  text-white uppercase font-bold">
-
+                                    <thead class="bg-gradient-to-r from-[#19A389] to-[#138A73] text-white uppercase font-bold">
                                         <tr>
-
-                                            <th class="p-3">
-                                                KELAS
-                                            </th>
-
-                                            <th class="p-3">
-                                                WALI KELAS
-                                            </th>
-
-                                            <th class="p-3">
-                                                JUMLAH MURID
-                                            </th>
-
-                                            <th class="p-3">
-                                                JAM MASUK
-                                            </th>
-
-                                            <th class="p-3">
-                                                JAM PULANG
-                                            </th>
-
+                                            <th class="p-3">KELAS</th>
+                                            <th class="p-3">MAPEL</th>
+                                            <th class="p-3">JAM</th>
+                                            <th class="p-3">SISWA</th>
+                                            <th class="p-3">STATUS</th>
                                         </tr>
-
                                     </thead>
 
-                                    <tbody class="divide-y divide-slate-100
-                                                 text-slate-600">
+                                    <tbody class="divide-y divide-slate-100 text-slate-600">
 
-                                        @forelse($kelasesWithCount as $k)
-
+                                        @forelse($jadwalHariIni as $k)
                                             <tr class="hover:bg-slate-50">
-
-                                                <td class="p-3 font-semibold
-                                                           text-slate-700">
-
-                                                    Kelas {{ $k->nama_kelas }}
-
-                                                </td>
-
+                                                <td class="p-3 font-semibold text-slate-700">Kelas {{ $k->kelas }}</td>
+                                                <td class="p-3">{{ $k->mapel }}</td>
+                                                <td class="p-3 font-bold text-slate-700">{{ $k->jam_masuk }} - {{ $k->jam_selesai }}</td>
+                                                <td class="p-3">{{ $k->jumlah_siswa }}</td>
                                                 <td class="p-3">
-
-                                                    {{ $guru->nama ?? Auth::user()->name }}
-
+                                                    @php
+                                                        $badge = match($k->status) {
+                                                            'sudah'      => ['bg-emerald-100 text-emerald-800', 'Sudah Absen'],
+                                                            'mulai'      => ['bg-teal-100 text-teal-800', 'Siap Diabsen'],
+                                                            'libur'      => ['bg-rose-100 text-rose-700', 'Libur'],
+                                                            'digantikan' => ['bg-amber-100 text-amber-800', 'Digantikan'],
+                                                            default      => ['bg-slate-100 text-slate-600', 'Belum Waktunya'],
+                                                        };
+                                                    @endphp
+                                                    <span class="px-2.5 py-1 rounded-full font-bold text-[10px] {{ $badge[0] }}">{{ $badge[1] }}</span>
                                                 </td>
-
-                                                <td class="p-3">
-
-                                                    <span class="px-2.5 py-1
-                                                                 bg-emerald-100
-                                                                 text-emerald-800
-                                                                 rounded-full font-bold
-                                                                 text-[10px]">
-
-                                                        {{ $k->jumlah_murid }}
-                                                        Murid
-
-                                                    </span>
-
-                                                </td>
-
-                                                <td class="p-3 font-bold
-                                                           text-slate-700">
-
-                                                    {{ $k->jam_masuk }}
-
-                                                </td>
-
-                                                <td class="p-3 font-bold
-                                                           text-slate-700">
-
-                                                    {{ $k->jam_pulang }}
-
-                                                </td>
-
                                             </tr>
-
                                         @empty
-
                                             <tr>
-
-                                                <td colspan="5"
-                                                    class="p-4 text-center
-                                                           text-slate-400 italic">
-
+                                                <td colspan="5" class="p-4 text-center text-slate-400 italic">
                                                     Tidak ada jadwal aktif hari ini.
-
                                                 </td>
-
                                             </tr>
-
                                         @endforelse
 
                                     </tbody>
@@ -1018,6 +917,44 @@
 
         }
 
+
+        // ===== TOAST NOTIFIKASI =====
+        document.addEventListener('DOMContentLoaded', function () {
+            const el = document.getElementById('toastData');
+            if (!el) return;
+
+            const sukses = el.dataset.tipe === 'success';
+            const toast = document.createElement('div');
+            toast.className = 'fixed top-5 right-5 z-[100] max-w-sm w-[calc(100%-2.5rem)] p-4 rounded-2xl shadow-xl border-l-4 '
+                + 'bg-white flex items-start gap-3 transition-all duration-300 opacity-0 -translate-y-2 '
+                + (sukses ? 'border-[#19A389]' : 'border-rose-500');
+
+            const ikon = document.createElement('i');
+            ikon.className = 'mt-0.5 text-lg fa-solid ' + (sukses ? 'fa-circle-check text-[#19A389]' : 'fa-circle-exclamation text-rose-500');
+
+            const isi = document.createElement('div');
+            isi.className = 'flex-1';
+            const judul = document.createElement('p');
+            judul.className = 'text-xs font-bold text-slate-800';
+            judul.textContent = sukses ? 'Berhasil' : 'Tidak dapat diproses';
+            const pesan = document.createElement('p');
+            pesan.className = 'text-[11px] text-slate-500 mt-0.5 leading-relaxed';
+            pesan.textContent = el.dataset.pesan;
+            isi.append(judul, pesan);
+
+            const tutup = document.createElement('button');
+            tutup.type = 'button';
+            tutup.className = 'text-slate-400 hover:text-slate-600 text-xs';
+            tutup.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+
+            const hilang = () => { toast.classList.add('opacity-0'); setTimeout(() => toast.remove(), 300); };
+            tutup.addEventListener('click', hilang);
+
+            toast.append(ikon, isi, tutup);
+            document.body.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('opacity-0', '-translate-y-2'));
+            setTimeout(hilang, 7000);
+        });
 
         function toggleSidebar() {
 

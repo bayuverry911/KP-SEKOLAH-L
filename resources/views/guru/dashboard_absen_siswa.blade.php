@@ -29,24 +29,38 @@
 
                 <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-100 space-y-6">
                     
-                    <!-- INFORMASI SESI HASIL INPUT ABSEN SISWA -->
-                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 text-xs">
-                        <div class="font-semibold text-slate-500 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 flex items-center gap-2">
-                            <span class="text-[#19A389] font-bold">{{ session('sesi_mapel', 'TIK') }}</span>
-                            <span>•</span>
-                            <span class="font-bold text-slate-700">{{ session('sesi_kelas', 'VII A') }}</span>
-                            <span>•</span>
-                            <span>Pertemuan {{ session('sesi_pertemuan', '1') }}</span>
-                            <span>•</span>
-                            <span>{{ session('sesi_tanggal', date('d/m/Y')) }}</span>
+                    @if(session('error'))
+                        <div class="p-3 bg-rose-100 border border-rose-300 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
+                            <span>{{ session('error') }}</span>
                         </div>
+                    @endif
 
-                        <a href="{{ route('guru.rekap-siswa') }}" 
-                           class="bg-[#19A389] hover:bg-[#138A73] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition">
-                            <i class="fa-solid fa-list-check"></i> Rekap Absen Siswa
+                    <!-- INFORMASI SESI (otomatis dari jadwal hari ini, tidak bisa diubah) -->
+                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 text-xs">
+                        <div class="font-semibold text-slate-500 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span class="text-[#19A389] font-bold">{{ $kartu->mapel }}</span>
+                            <span>•</span>
+                            <span class="font-bold text-slate-700">Kelas {{ $kartu->kelas }}</span>
+                            <span>•</span>
+                            <span>Pertemuan ke-{{ $pertemuan }}</span>
+                            <span>•</span>
+                            <span>{{ $kartu->jam_masuk }} - {{ $kartu->jam_selesai }} WIB</span>
+                            <span>•</span>
+                            <span title="Tanggal terkunci otomatis sesuai hari ini">
+                                <i class="fa-solid fa-lock text-[10px] text-slate-400 mr-0.5"></i>{{ \App\Services\AbsenSiswaService::namaHari($now) }}, {{ $now->format('d/m/Y') }}
+                            </span>
+                            @if($kartu->is_pengganti)
+                                <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 font-bold text-[10px]">
+                                    Guru Pengganti{{ $kartu->guru_asli ? ' (menggantikan ' . $kartu->guru_asli . ')' : '' }}
+                                </span>
+                            @endif
+                        </div>
+                        <a href="{{ route('guru.dashboard') }}"
+                           class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition">
+                            <i class="fa-solid fa-arrow-left"></i> Kembali ke Dashboard
                         </a>
                     </div>
-
                     <!-- SEARCH BAR (CARI NAMA SAJA) -->
                     <div class="flex items-center gap-3 text-xs max-w-md">
                         <span class="font-bold text-slate-600 whitespace-nowrap">Cari Nama Siswa:</span>
@@ -55,7 +69,7 @@
                     </div>
 
                     <!-- FORM SIMPAN BATCH PRESENSI -->
-                    <form action="{{ route('guru.absen.siswa.batch') }}" method="POST">
+                    <form action="{{ route('guru.absen-siswa.simpan', $jadwal->id) }}" method="POST">
                         @csrf
                         <div class="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm">
                             <table class="w-full text-left text-xs min-w-[700px]" id="siswaTable">
@@ -71,8 +85,8 @@
                                     
                                     @forelse($siswas as $index =>$s)
                                         @php
-                                            $siswaId =$s->id ?? ($index + 1);$namaSiswa = $s->nama ?? $s->name ?? 'Sadam Saena Suyatman';
-                                            $kelasSiswa =$s->kelas ?? session('sesi_kelas', 'VII A');
+                                            $siswaId =$s->id ?? ($index + 1);$namaSiswa = $s->nama ?? $s->name ?? '-';
+                                            $kelasSiswa = $s->kelas ?? $kartu->kelas;
                                             $statusSiswa = 'MASUK';
                                         @endphp
                                         <tr class="hover:bg-slate-50/80 transition row-siswa">

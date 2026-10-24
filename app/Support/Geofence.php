@@ -19,4 +19,20 @@ class Geofence
 
         return $radiusBumi * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
+
+    /**
+     * Format jarak agar mudah dibaca: < 1000 m => "85 m", selebihnya => "1,25 km".
+     */
+    public static function format(?int $meter): string
+    {
+        if ($meter === null) {
+            return '-';
+        }
+
+        if ($meter < 1000) {
+            return $meter . ' m';
+        }
+
+        return rtrim(rtrim(number_format($meter / 1000, 2, ',', '.'), '0'), ',') . ' km';
+    }
 }
