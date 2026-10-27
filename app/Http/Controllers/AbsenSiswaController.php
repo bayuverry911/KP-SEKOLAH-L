@@ -182,6 +182,8 @@ class AbsenSiswaController extends Controller
             'kolom'       => collect(),
             'rekap'       => collect(),
             'liburRentang' => collect(),
+            'efektif'      => 0,
+            'belumCount'   => 0,
         ];
 
         if (! $terpilih) {
@@ -214,9 +216,11 @@ class AbsenSiswaController extends Controller
             ->map(fn ($h) => mb_strtolower((string) $h))
             ->unique()->all();
 
-        // ---- kolom tanggal ----
-        $kolom = [];
-        $nilai = [];
+        // ---- kolom tanggal: SEMUA tanggal pertemuan dalam rentang ----
+        // state: sudah (diabsen) | belum (terlewat, belum diabsen) | libur | hariini | depan
+        $hariIni = Absen::sekarang()->startOfDay();
+        $kolom   = [];
+        $nilai   = [];
 
         foreach ($rows as $r) {
             $tgl = substr((string) $r->tanggal, 0, 10);
@@ -225,7 +229,7 @@ class AbsenSiswaController extends Controller
                 $kolom[$tgl] = (object) [
                     'tanggal'    => $tgl,
                     'carbon'     => Carbon::parse($tgl, Absen::TZ),
-                    'libur'      => false,
+                    'state'      => 'sudah',
                     'keterangan' => null,
                     'guru'       => $r->nama_guru ?: '-',
                     'pengganti'  => (bool) $r->is_pengganti,
@@ -235,36 +239,56 @@ class AbsenSiswaController extends Controller
             $nilai[$r->siswa_id][$tgl] = Absen::STATUS[$r->status] ?? '?';
         }
 
-        // Tanggal merah ikut tampil bila ada data hari itu, atau kelas ini memang punya jadwal di hari tsb.
-        foreach ($liburRentang as $tgl => $libur) {
-            $carbon = Carbon::parse($tgl, Absen::TZ);
+        $kursor = $dari->copy()->startOfDay();
 
-            if (isset($kolom[$tgl]) || in_array(mb_strtolower(Absen::namaHari($carbon)), $hariJadwal, true)) {
+        while ($kursor->lte($sampai)) {
+            $tgl       = $kursor->toDateString();
+            $terjadwal = in_array(mb_strtolower(Absen::namaHari($kursor)), $hariJadwal, true);
+            $libur     = $liburRentang->get($tgl);
+            $adaData   = isset($kolom[$tgl]);
+
+            if ($libur && ($adaData || $terjadwal)) {
                 $kolom[$tgl] = (object) [
                     'tanggal'    => $tgl,
-                    'carbon'     => $carbon,
-                    'libur'      => true,
+                    'carbon'     => $kursor->copy(),
+                    'state'      => 'libur',
                     'keterangan' => $libur->keterangan,
                     'guru'       => null,
                     'pengganti'  => false,
                 ];
+            } elseif (! $adaData && $terjadwal) {
+                $kolom[$tgl] = (object) [
+                    'tanggal'    => $tgl,
+                    'carbon'     => $kursor->copy(),
+                    'state'      => $kursor->lt($hariIni) ? 'belum' : ($kursor->eq($hariIni) ? 'hariini' : 'depan'),
+                    'keterangan' => null,
+                    'guru'       => null,
+                    'pengganti'  => false,
+                ];
             }
+
+            $kursor->addDay();
         }
 
         ksort($kolom);
+        $kolom = collect($kolom);
 
-        // ---- total & persentase (hari libur tidak dihitung) ----
-        $rekap = $siswas->map(function ($s) use ($kolom, $nilai) {
+        // Hari efektif = hanya tanggal yang SUDAH diabsen.
+        // Libur, cuti bersama, belum diabsen, hari ini & masa depan tidak masuk pembagi.
+        $efektif    = $kolom->where('state', 'sudah')->count();
+        $belumCount = $kolom->where('state', 'belum')->count();
+
+        $rekap = $siswas->map(function ($s) use ($kolom, $nilai, $efektif) {
             $total = ['H' => 0, 'I' => 0, 'S' => 0, 'A' => 0];
             $sel   = [];
 
             foreach ($kolom as $tgl => $k) {
-                if ($k->libur) {
-                    $sel[$tgl] = 'LIBUR';
+                if ($k->state !== 'sudah') {
+                    $sel[$tgl] = null;
                     continue;
                 }
 
-                $huruf = $nilai[$s->id][$tgl] ?? null;
+                $huruf     = $nilai[$s->id][$tgl] ?? null;
                 $sel[$tgl] = $huruf;
 
                 if ($huruf && isset($total[$huruf])) {
@@ -272,21 +296,21 @@ class AbsenSiswaController extends Controller
                 }
             }
 
-            $efektif = array_sum($total);
-
             return (object) [
-                'id'      => $s->id,
-                'nama'    => $s->nama,
-                'sel'     => $sel,
-                'total'   => $total,
-                'persen'  => $efektif > 0 ? round($total['H'] / $efektif * 100, 1) : null,
+                'id'     => $s->id,
+                'nama'   => $s->nama,
+                'sel'    => $sel,
+                'total'  => $total,
+                'persen' => $efektif > 0 ? round($total['H'] / $efektif * 100, 1) : null,
             ];
         });
 
         return view('guru.rekap_siswa', array_merge($data, [
-            'kolom'        => collect($kolom),
+            'kolom'        => $kolom,
             'rekap'        => $rekap,
             'liburRentang' => $liburRentang,
+            'efektif'      => $efektif,
+            'belumCount'   => $belumCount,
         ]));
     }
 

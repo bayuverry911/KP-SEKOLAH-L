@@ -21,7 +21,7 @@
     $adaFilter = $terpilih !== null;
 @endphp
 
-    <div id="mobileOverlay" class="fixed inset-0 bg-slate-900/50 z-40 hidden lg:hidden backdrop-blur-sm transition-opacity"></div>
+    <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 z-40 hidden lg:hidden backdrop-blur-sm transition-opacity"></div>
 
     <div class="flex min-h-screen relative">
         @include('layouts.partials.sidebar')
@@ -29,7 +29,7 @@
         <main class="flex-1 flex flex-col min-w-0 overflow-y-auto min-h-screen">
             <header class="bg-transparent px-4 sm:px-8 pt-4 pb-2 flex justify-between items-center">
                 <div class="flex items-center gap-3">
-                    <button id="btnToggleSidebar" class="lg:hidden text-slate-600 p-2 rounded-lg bg-white shadow-sm hover:bg-slate-100">
+                    <button onclick="toggleSidebar()" class="lg:hidden text-slate-600 p-2 rounded-lg bg-white shadow-sm hover:bg-slate-100">
                         <i class="fa-solid fa-bars text-lg"></i>
                     </button>
                     <h1 class="text-xs font-bold text-slate-400 uppercase tracking-widest">REKAP ABSENSI SISWA</h1>
@@ -71,7 +71,7 @@
                         <div class="md:col-span-3">
                             <label class="block font-semibold text-slate-600 mb-1">Rentang Pembelajaran</label>
                             <select name="periode" id="selectPeriode" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-bold focus:outline-none focus:border-[#19A389]">
-                                <option value="">Atur tanggal manual - </option>
+                                <option value="">- Atur tanggal manual -</option>
                                 @foreach($periodeList as $p)
                                     <option value="{{ $p->id }}"
                                             data-mulai="{{ $p->tanggal_mulai->toDateString() }}"
@@ -110,44 +110,69 @@
 
                         <hr class="border-slate-100">
 
+                        <!-- ============ PERINGATAN BELUM DIABSEN ============ -->
+                        @if($belumCount > 0)
+                            <div class="p-4 bg-amber-100 border border-amber-200 text-amber-900 text-xs sm:text-sm font-semibold rounded-2xl flex items-start gap-3">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-500 text-lg mt-0.5"></i>
+                                <span>Perhatian: Terdapat {{ $belumCount }} Jadwal Pertemuan yang Belum Diabsen (Kolom Kuning).
+                                    Mohon segera beritahu guru pengampu/guru pengganti bersangkutan untuk mengisi absensi agar kalkulasi % Kehadiran akurat.</span>
+                            </div>
+                        @endif
+
                         <!-- ============ INFORMASI TANGGAL MERAH ============ -->
                         <div class="text-xs text-slate-700 leading-relaxed">
                             <span class="font-bold">📌 Informasi Periode Ini:</span>
                             @if($liburRentang->isNotEmpty())
-                                Tanggal Merah (
-                                {{ $liburRentang->map(fn ($l) => $l->tanggal->day . ' ' . substr(Absen::BULAN[$l->tanggal->month], 0, 3) . ' ' . $l->tanggal->year . ': ' . $l->keterangan)->implode('; ') }}
-                                ). Hari libur nasional/sekolah tidak dihitung sebagai hari efektif belajar.
+                                Ada {{ $liburRentang->count() }} hari libur nasional/sekolah pada rentang ini
+                                ({{ $liburRentang->map(fn ($l) => Absen::namaHari($l->tanggal) . ', ' . $l->tanggal->format('d/m/Y') . ' - ' . $l->keterangan)->implode('; ') }}).
+                                Hari libur tidak dihitung sebagai hari efektif belajar.
                             @else
-                                Tidak ada tanggal merah pada rentang ini.
+                                Tidak ada hari libur nasional pada rentang ini.
                             @endif
+                            Hari efektif pada rentang ini: <b>{{ $efektif }}</b> pertemuan.
                         </div>
 
                         <!-- ============ MATRIKS REKAP ============ -->
                         <div class="overflow-x-auto rounded-2xl border border-slate-100">
                             <table class="w-full text-center text-xs border-collapse">
-                                <thead class="text-white font-bold">
-                                    <tr class="bg-[#0f7a63]">
+                                <thead class="font-bold">
+                                    <tr class="bg-[#0f7a63] text-white">
                                         <th rowspan="2" class="p-3 w-10">No</th>
                                         <th rowspan="2" class="p-3 text-left min-w-[10rem]">Nama Siswa</th>
 
                                         @foreach($kolom as $k)
-                                            @if($k->libur)
-                                                <th rowspan="2" class="p-3 min-w-[7rem] bg-rose-400">
-                                                    <div class="leading-tight">{{ Absen::namaHari($k->carbon) }},<br>{{ $k->carbon->format('d/m/Y') }}</div>
-                                                </th>
-                                            @else
-                                                <th rowspan="2" class="p-3 min-w-[9.5rem]">
-                                                    <div class="leading-tight">{{ Absen::namaHari($k->carbon) }},<br>{{ $k->carbon->format('d/m/Y') }}</div>
-                                                    <div class="text-[10px] font-semibold text-emerald-100 mt-1">
-                                                        Guru: {{ $k->guru }}{{ $k->pengganti ? ' (Ganti)' : '' }}
-                                                    </div>
-                                                    <!-- PERBAIKAN: Menggunakan data-attribute -->
+                                            @php
+                                                $tglTampil = Absen::namaHari($k->carbon) . ',<br>' . $k->carbon->format('d/m/Y');
+                                            @endphp
+
+                                            @if($k->state === 'sudah')
+                                                <th rowspan="2" class="p-2 min-w-[9.5rem] bg-teal-100 text-slate-800 align-top">
+                                                    <div class="bg-[#0f7a63] text-white rounded-lg p-2 leading-tight">{!! $tglTampil !!}</div>
+                                                    <div class="text-[10px] font-semibold text-slate-600 mt-2">Diabsen oleh:</div>
+                                                    <div class="text-[11px] font-bold">{{ $k->guru }}{{ $k->pengganti ? ' (Ganti)' : '' }}</div>
                                                     <button type="button"
                                                             data-tanggal="{{ $k->tanggal }}"
                                                             data-tampil="{{ $k->carbon->format('d/m/Y') }}"
-                                                            class="btn-hapus-hari mt-1.5 px-2 py-1 bg-rose-600 hover:bg-rose-700 rounded-md text-[10px] font-bold inline-flex items-center gap-1">
-                                                        <i class="fa-solid fa-trash"></i> Hapus Sehari
+                                                            class="btn-hapus-hari mt-1.5 px-2 py-1 text-rose-700 hover:bg-rose-100 rounded-md text-[10px] font-bold inline-flex items-center gap-1">
+                                                        <i class="fa-solid fa-trash"></i> Hapus Harian
                                                     </button>
+                                                </th>
+                                            @elseif($k->state === 'belum')
+                                                <th rowspan="2" class="p-2 min-w-[8rem] bg-yellow-300 text-slate-900 align-top">
+                                                    <div class="leading-tight">{!! $tglTampil !!}</div>
+                                                    <div class="mt-3 text-rose-700 font-extrabold uppercase leading-tight">
+                                                        <i class="fa-solid fa-triangle-exclamation"></i> Belum<br>Diabsen
+                                                    </div>
+                                                </th>
+                                            @elseif($k->state === 'libur')
+                                                <th rowspan="2" class="p-2 min-w-[8rem] bg-rose-400 text-white align-top">
+                                                    <div class="leading-tight">{!! $tglTampil !!}</div>
+                                                    <div class="mt-3 leading-tight">LIBUR{{ $k->keterangan ? ' (' . $k->keterangan . ')' : '' }}</div>
+                                                </th>
+                                            @else
+                                                <th rowspan="2" class="p-2 min-w-[8rem] bg-[#0f7a63] text-white align-top">
+                                                    <div class="leading-tight">{!! $tglTampil !!}</div>
+                                                    <div class="mt-3 text-[11px] font-semibold text-emerald-100">({{ $k->state === 'hariini' ? 'Hari Ini' : 'Masa Depan' }})</div>
                                                 </th>
                                             @endif
                                         @endforeach
@@ -155,7 +180,7 @@
                                         <th colspan="4" class="p-2 border-l border-white/20">Total</th>
                                         <th rowspan="2" class="p-3 border-l border-white/20">% Kehadiran</th>
                                     </tr>
-                                    <tr class="bg-[#0f7a63]">
+                                    <tr class="bg-[#0f7a63] text-white">
                                         <th class="p-2 border-l border-white/20">H</th>
                                         <th class="p-2">I</th>
                                         <th class="p-2">S</th>
@@ -165,21 +190,30 @@
 
                                 <tbody class="divide-y divide-slate-100 text-slate-700">
                                     @forelse($rekap as $i => $r)
-                                        <tr class="hover:bg-slate-50">
+                                        <tr>
                                             <td class="p-3 font-semibold">{{ $i + 1 }}.</td>
                                             <td class="p-3 text-left font-bold text-slate-800">{{ $r->nama }}</td>
 
                                             @foreach($kolom as $tgl => $k)
                                                 @php $nilai = $r->sel[$tgl] ?? null; @endphp
-                                                @if($k->libur)
-                                                    <td class="p-2 bg-rose-300/70 font-bold text-rose-800">
-                                                        LIBUR
-                                                        @if($loop->parent->first && $k->keterangan)
-                                                            <br><span class="font-semibold">({{ $k->keterangan }})</span>
-                                                        @endif
-                                                    </td>
+
+                                                @if($k->state === 'libur')
+                                                    <td class="p-2 bg-rose-300 font-bold text-rose-900">LIBUR</td>
+                                                @elseif($k->state === 'belum')
+                                                    <td class="p-2 bg-yellow-100 text-slate-400 font-bold">?</td>
+                                                @elseif($k->state === 'sudah')
+                                                    @php
+                                                        $isi = match($nilai) {
+                                                            'H' => 'bg-emerald-400 text-slate-900',
+                                                            'I' => 'bg-amber-200 text-slate-900',
+                                                            'S' => 'bg-sky-200 text-slate-900',
+                                                            'A' => 'bg-rose-200 text-rose-900',
+                                                            default => 'text-slate-300',
+                                                        };
+                                                    @endphp
+                                                    <td class="p-3 font-bold text-sm {{ $isi }}">{{ $nilai ?? '-' }}</td>
                                                 @else
-                                                    <td class="p-3 font-bold text-sm {{ $warnaHuruf[$nilai] ?? 'text-slate-300' }}">{{ $nilai ?? '-' }}</td>
+                                                    <td class="p-2 text-slate-400 font-bold">-</td>
                                                 @endif
                                             @endforeach
 
@@ -200,13 +234,13 @@
                             </table>
                         </div>
 
-                        @if($kolom->where('libur', false)->isEmpty())
-                            <p class="text-xs text-slate-400 italic">Belum ada absen yang tercatat pada rentang tanggal ini.</p>
+                        @if($kolom->isEmpty())
+                            <p class="text-xs text-slate-400 italic">Tidak ada jadwal pertemuan atau absen pada rentang tanggal ini.</p>
                         @endif
 
                         <p class="text-[11px] text-slate-600">
-                            *Untuk menghapus kesalahan input, gunakan tombol 'Hapus Sehari' di bagian atas kolom tanggal bersangkutan.
-                            Penghapusan berlaku untuk seluruh siswa pada tanggal itu. Persentase = H &divide; (H+I+S+A); hari libur tidak dihitung.
+                            *Untuk menghapus kesalahan input, gunakan tombol 'Hapus Harian' di bagian atas kolom tanggal bersangkutan (berlaku untuk seluruh siswa pada tanggal itu).
+                            Hari libur &amp; hari belum diabsen tidak dimasukkan dalam pembagi % Kehadiran siswa: % = Hadir &divide; hari efektif (yang sudah diabsen) &times; 100%.
                         </p>
                     @endif
                 </div>
@@ -215,6 +249,7 @@
     </div>
 
     @if($adaFilter)
+        <!-- Form hapus per hari (seluruh siswa) -->
         <form id="formHapusHari" method="POST" action="{{ route('guru.rekap-siswa.hapus-hari') }}" class="hidden">
             @csrf
             @method('DELETE')
@@ -235,81 +270,68 @@
     @endif
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            
-            // 1. Sidebar Toggle
-            const btnToggleSidebar = document.getElementById('btnToggleSidebar');
-            const mobileOverlay = document.getElementById('mobileOverlay');
+        function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            if (sidebar) sidebar.classList.toggle('-translate-x-full');
+            if (overlay) overlay.classList.toggle('hidden');
+        }
 
-            function toggleMenu() {
-                if (sidebar) sidebar.classList.toggle('-translate-x-full');
-                if (mobileOverlay) mobileOverlay.classList.toggle('hidden');
-            }
-
-            if (btnToggleSidebar) btnToggleSidebar.addEventListener('click', toggleMenu);
-            if (mobileOverlay) mobileOverlay.addEventListener('click', toggleMenu);
-
-            // 2. Pilih periode pembelajaran otomatis
-            const selectPeriode = document.getElementById('selectPeriode');
-            if (selectPeriode) {
-                selectPeriode.addEventListener('change', function () {
-                    const opt = this.options[this.selectedIndex];
-                    if (opt && opt.dataset.mulai) {
-                        document.getElementById('inputDari').value = opt.dataset.mulai;
-                        document.getElementById('inputSampai').value = opt.dataset.selesai;
-                    }
-                });
-            }
-
-            // 3. Konfirmasi Hapus Hari via Data Attributes
-            const formHapusHari = document.getElementById('formHapusHari');
-            const hapusTanggal = document.getElementById('hapusTanggal');
-
-            document.querySelectorAll('.btn-hapus-hari').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const tanggalIso = this.dataset.tanggal;
-                    const tanggalTampil = this.dataset.tampil;
-
-                    Swal.fire({
-                        title: 'Hapus absen tanggal ' + tanggalTampil + '?',
-                        html: 'Absen <strong>seluruh siswa</strong> pada tanggal ini akan dihapus permanen. '
-                            + 'Penghapusan per siswa tidak tersedia. Setelah itu Anda dapat absen ulang dari dashboard.',
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#CE1B1B',
-                        cancelButtonColor: '#64748b',
-                        confirmButtonText: '<i class="fa-solid fa-trash mr-1"></i> Ya, Hapus Sehari',
-                        cancelButtonText: 'Batal',
-                        customClass: {
-                            popup: 'rounded-3xl',
-                            confirmButton: 'text-xs px-5 py-2.5 rounded-xl font-semibold',
-                            cancelButton: 'text-xs px-5 py-2.5 rounded-xl font-semibold'
-                        }
-                    }).then((hasil) => {
-                        if (hasil.isConfirmed && formHapusHari && hapusTanggal) {
-                            hapusTanggal.value = tanggalIso;
-                            formHapusHari.submit();
-                        }
-                    });
-                });
+        // Pilih periode pembelajaran -> isi otomatis rentang tanggal
+        const selectPeriode = document.getElementById('selectPeriode');
+        if (selectPeriode) {
+            selectPeriode.addEventListener('change', function () {
+                const opt = this.options[this.selectedIndex];
+                if (opt && opt.dataset.mulai) {
+                    document.getElementById('inputDari').value = opt.dataset.mulai;
+                    document.getElementById('inputSampai').value = opt.dataset.selesai;
+                }
             });
+        }
 
-            // 4. Flash Message Notifikasi
+        document.querySelectorAll('.btn-hapus-hari').forEach(function (btn) {
+            btn.addEventListener('click', function () { hapusHari(btn.dataset.tanggal, btn.dataset.tampil); });
+        });
+
+        // Hapus absen SATU HARI (seluruh siswa)
+        function hapusHari(tanggalIso, tanggalTampil) {
+            Swal.fire({
+                title: 'Hapus absen tanggal ' + tanggalTampil + '?',
+                html: 'Absen <strong>seluruh siswa</strong> pada tanggal ini akan dihapus permanen. '
+                    + 'Penghapusan per siswa tidak tersedia. Setelah itu Anda dapat absen ulang dari dashboard.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#CE1B1B',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: '<i class="fa-solid fa-trash mr-1"></i> Ya, Hapus Harian',
+                cancelButtonText: 'Batal',
+                customClass: {
+                    popup: 'rounded-3xl',
+                    confirmButton: 'text-xs px-5 py-2.5 rounded-xl font-semibold',
+                    cancelButton: 'text-xs px-5 py-2.5 rounded-xl font-semibold'
+                }
+            }).then((hasil) => {
+                if (hasil.isConfirmed) {
+                    document.getElementById('hapusTanggal').value = tanggalIso;
+                    document.getElementById('formHapusHari').submit();
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
             const flash = document.getElementById('flashData');
-            if (flash) {
-                Swal.fire({
-                    icon: flash.dataset.tipe === 'success' ? 'success' : 'error',
-                    title: flash.dataset.tipe === 'success' ? 'Berhasil' : 'Gagal',
-                    text: flash.dataset.pesan,
-                    confirmButtonText: 'OK',
-                    confirmButtonColor: '#19A389',
-                    customClass: {
-                        popup: 'rounded-3xl p-6 shadow-2xl border border-slate-100',
-                        confirmButton: 'text-xs px-5 py-2.5 rounded-xl font-semibold shadow-md'
-                    }
-                });
-            }
+            if (!flash) return;
+            Swal.fire({
+                icon: flash.dataset.tipe === 'success' ? 'success' : 'error',
+                title: flash.dataset.tipe === 'success' ? 'Berhasil' : 'Gagal',
+                text: flash.dataset.pesan,
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#19A389',
+                customClass: {
+                    popup: 'rounded-3xl p-6 shadow-2xl border border-slate-100',
+                    confirmButton: 'text-xs px-5 py-2.5 rounded-xl font-semibold shadow-md'
+                }
+            });
         });
     </script>
 </body>
