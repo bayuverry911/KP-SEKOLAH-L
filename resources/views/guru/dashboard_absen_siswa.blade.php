@@ -36,7 +36,15 @@
                         </div>
                     @endif
 
-                    <!-- INFORMASI SESI (otomatis dari jadwal hari ini, tidak bisa diubah) -->
+                    @if($susulan)
+                        <div class="p-3 bg-amber-100 border border-amber-300 text-amber-900 text-xs rounded-xl flex items-start gap-2">
+                            <i class="fa-solid fa-clock-rotate-left text-amber-600 mt-0.5"></i>
+                            <span><b>Absen Susulan.</b> Tanggal terkunci sesuai jadwal yang terlewat dan tidak dapat diubah.
+                                Tinjau dan salin dari catatan fisik.</span>
+                        </div>
+                    @endif
+
+                    <!-- INFORMASI SESI (otomatis dari jadwal, tanggal terkunci) -->
                     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 text-xs">
                         <div class="font-semibold text-slate-500 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span class="text-[#19A389] font-bold">{{ $kartu->mapel }}</span>
@@ -56,9 +64,9 @@
                                 </span>
                             @endif
                         </div>
-                        <a href="{{ route('guru.dashboard') }}"
+                        <a href="{{ $susulan ? ($kembali ?? route('guru.rekap-siswa')) : route('guru.dashboard') }}"
                            class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition">
-                            <i class="fa-solid fa-arrow-left"></i> Kembali ke Dashboard
+                            <i class="fa-solid fa-arrow-left"></i> {{ $susulan ? 'Kembali ke Rekap' : 'Kembali ke Dashboard' }}
                         </a>
                     </div>
                     <!-- SEARCH BAR (CARI NAMA SAJA) -->
@@ -69,7 +77,7 @@
                     </div>
 
                     <!-- FORM SIMPAN BATCH PRESENSI -->
-                    <form action="{{ route('guru.absen-siswa.simpan', $jadwal->id) }}" method="POST">
+                    <form action="{{ $aksi }}" method="POST">
                         @csrf
                         <div class="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm">
                             <table class="w-full text-left text-xs min-w-[700px]" id="siswaTable">

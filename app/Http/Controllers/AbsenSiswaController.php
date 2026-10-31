@@ -19,13 +19,14 @@ use RuntimeException;
 /**
  * Absensi siswa (sisi guru).
  *
- * Alur "satu pintu": absen HANYA bisa dimulai dari kartu jadwal hari ini di dashboard.
- * Tanggal tidak pernah diterima dari browser; selalu tanggal hari ini (WIB).
+ * Alur "satu pintu": absen dimulai dari kartu jadwal hari ini di dashboard,
+ * atau dari tombol "Absen Susulan" di kolom kuning pada Rekap (tanggal terlewat).
+ * Halaman absennya sama (bukan pop-up). Tanggal tidak pernah diterima dari form.
  */
 class AbsenSiswaController extends Controller
 {
     // =====================================================================
-    //  FORM ABSEN (dibuka dari kartu jadwal di dashboard)
+    //  ABSEN HARI INI (dari kartu di dashboard)
     // =====================================================================
     public function form(Jadwal $jadwal)
     {
@@ -36,31 +37,145 @@ class AbsenSiswaController extends Controller
             return $tolak;
         }
 
-        $siswas    = Absen::siswaKelas($kartu->kelas);
-        $pertemuan = Absen::pertemuanBerikutnya($kartu->kelas, $kartu->mapel, $now->toDateString());
+        return $this->tampilForm($jadwal, $kartu, $now, route('guru.absen-siswa.simpan', $jadwal->id), false);
+    }
 
-        return view('guru.dashboard_absen_siswa', compact('jadwal', 'kartu', 'siswas', 'pertemuan', 'now'));
+    public function simpan(Request $request, Jadwal $jadwal): RedirectResponse
+    {
+        $now   = Absen::sekarang();
+        $kartu = Absen::kartuUntuk(Auth::user(), $jadwal->id, $now);
+
+        if ($tolak = $this->tolak($kartu)) {
+            return $tolak;
+        }
+
+        return $this->simpanKeDb($request, $jadwal, $kartu, $now->toDateString(), false);
     }
 
     // =====================================================================
-    //  SIMPAN ABSEN -> kembali ke dashboard + toast
+    //  ABSEN SUSULAN (tanggal terlewat yang belum diabsen)
+    //  Hanya guru yang bertanggung jawab pada tanggal itu: guru pengganti
+    //  bila ada yang di-plot admin, selain itu guru mapel pada jadwal.
     // =====================================================================
-    public function simpan(Request $request, Jadwal $jadwal): RedirectResponse
+    public function formSusulan(Request $request, Jadwal $jadwal, string $tanggal)
+    {
+        [$kartu, $tgl, $error] = $this->siapkanSusulan($jadwal, $tanggal);
+        $filter = $this->filterRekap($request, $jadwal, $tanggal);
+
+        if ($error) {
+            return redirect()->route('guru.rekap-siswa', $filter)->with('error', $error);
+        }
+
+        return $this->tampilForm(
+            $jadwal, $kartu, $tgl,
+            route('guru.absen-siswa.susulan.simpan', [$jadwal->id, $tanggal] + $filter),
+            true,
+            route('guru.rekap-siswa', $filter)
+        );
+    }
+
+    public function simpanSusulan(Request $request, Jadwal $jadwal, string $tanggal): RedirectResponse
+    {
+        [$kartu, $tgl, $error] = $this->siapkanSusulan($jadwal, $tanggal);
+        $filter = $this->filterRekap($request, $jadwal, $tanggal);
+
+        if ($error) {
+            return redirect()->route('guru.rekap-siswa', $filter)->with('error', $error);
+        }
+
+        // Selesai absen susulan -> langsung kembali ke Rekap (filter kelas & rentang yang sama)
+        return $this->simpanKeDb($request, $jadwal, $kartu, $tgl->toDateString(), true, $filter);
+    }
+
+    private function tampilForm(Jadwal $jadwal, object $kartu, Carbon $tanggal, string $aksi, bool $susulan, ?string $kembali = null)
+    {
+        $siswas    = Absen::siswaKelas($kartu->kelas);
+        $pertemuan = Absen::pertemuanBerikutnya($kartu->kelas, $kartu->mapel, $tanggal->toDateString());
+        $now       = $tanggal; // tanggal absen (dikunci) yang ditampilkan di form
+
+        return view('guru.dashboard_absen_siswa', compact('jadwal', 'kartu', 'siswas', 'pertemuan', 'now', 'aksi', 'susulan', 'kembali'));
+    }
+
+    /**
+     * Validasi absen susulan. Mengembalikan [kartu, tanggal, pesanError].
+     */
+    private function siapkanSusulan(Jadwal $jadwal, string $tanggal): array
+    {
+        $gagal = fn (string $pesan) => [null, null, $pesan];
+
+        try {
+            $tgl = Carbon::createFromFormat('Y-m-d', $tanggal, Absen::TZ)->startOfDay();
+        } catch (\Throwable $e) {
+            return $gagal('Tanggal tidak valid.');
+        }
+
+        if ($tgl->toDateString() !== $tanggal) {
+            return $gagal('Tanggal tidak valid.');
+        }
+
+        $tampil = $tgl->format('d/m/Y');
+
+        if (! $tgl->lt(Absen::sekarang()->startOfDay())) {
+            return $gagal('Absen susulan hanya untuk tanggal yang sudah lewat. Untuk hari ini gunakan kartu jadwal di dashboard.');
+        }
+
+        if (mb_strtolower((string) $jadwal->hari) !== mb_strtolower(Absen::namaHari($tgl))) {
+            return $gagal("Tanggal {$tampil} bukan hari jadwal kelas ini ({$jadwal->hari}).");
+        }
+
+        if ($libur = Absen::hariLibur($tgl)) {
+            return $gagal("Tanggal {$tampil} adalah hari libur ({$libur->keterangan}).");
+        }
+
+        if (Absen::sudahDiabsen($jadwal->kelas, $jadwal->mapel, $tanggal)) {
+            return $gagal("Tanggal {$tampil} sudah diabsen.");
+        }
+
+        $guru      = Absen::guruDari(Auth::user());
+        $pengganti = JadwalPengganti::where('jadwal_id', $jadwal->id)->whereDate('tanggal', $tanggal)->first();
+
+        $idTanggungJawab   = $pengganti ? $pengganti->guru_id : $jadwal->guru_id;
+        $namaTanggungJawab = $pengganti ? $pengganti->nama_guru : $jadwal->nama_guru;
+
+        $berhak = $guru && (
+            $idTanggungJawab !== null
+                ? (string) $guru->id === (string) $idTanggungJawab
+                : mb_strtolower((string) $jadwal->nama_guru) === mb_strtolower((string) $guru->nama)
+        );
+
+        if (! $berhak) {
+            return $gagal(
+                "Absen susulan tanggal {$tampil} hanya dapat diisi oleh "
+                . ($pengganti ? 'guru pengganti ' : 'guru pengampu ') . $namaTanggungJawab . '.'
+            );
+        }
+
+        $kartu = (object) [
+            'id'           => $jadwal->id,
+            'kelas'        => $jadwal->kelas,
+            'mapel'        => $jadwal->mapel,
+            'jam_masuk'    => substr((string) ($jadwal->jam_masuk ?: '00:00'), 0, 5),
+            'jam_selesai'  => substr((string) ($jadwal->jam_selesai ?: '23:59'), 0, 5),
+            'status'       => 'susulan',
+            'is_pengganti' => $pengganti !== null,
+            'guru_asli'    => $pengganti ? $jadwal->nama_guru : null,
+        ];
+
+        return [$kartu, $tgl, null];
+    }
+
+    /**
+     * Simpan absen satu kelas untuk satu tanggal -> kembali ke dashboard + toast.
+     * Data tercatat pada kelas + mapel (muncul di rekap guru mapel), user_id = guru yang mengabsen.
+     */
+    private function simpanKeDb(Request $request, Jadwal $jadwal, object $kartu, string $tanggal, bool $susulan, ?array $kembaliRekap = null): RedirectResponse
     {
         $request->validate([
             'presensi'   => 'required|array',
             'presensi.*' => 'in:MASUK,IZIN,SAKIT,ABSEN',
         ]);
 
-        $user    = Auth::user();
-        $now     = Absen::sekarang();
-        $tanggal = $now->toDateString();          // dikunci: hari ini, tidak dari input
-        $kartu   = Absen::kartuUntuk($user, $jadwal->id, $now);
-
-        if ($tolak = $this->tolak($kartu)) {
-            return $tolak;
-        }
-
+        $user   = Auth::user();
         $siswas = Absen::siswaKelas($kartu->kelas);
 
         if ($siswas->isEmpty()) {
@@ -122,19 +237,61 @@ class AbsenSiswaController extends Controller
                 throw $e;
             }
 
-            return redirect()->route('guru.dashboard')
-                ->with('error', "Kelas {$kartu->kelas} ({$kartu->mapel}) sudah diabsen hari ini.");
+            return $this->kembali($kembaliRekap)
+                ->with('error', "Kelas {$kartu->kelas} ({$kartu->mapel}) sudah diabsen pada tanggal tersebut.");
         }
 
-        return redirect()->route('guru.dashboard')->with(
+        $tampil = Carbon::parse($tanggal)->format('d/m/Y');
+
+        return $this->kembali($kembaliRekap)->with(
             'success',
-            "Absen Kelas {$kartu->kelas} - {$kartu->mapel} (Pertemuan ke-{$pertemuan}) tersimpan: "
+            ($susulan ? "Absen susulan {$tampil} " : 'Absen ')
+            . "Kelas {$kartu->kelas} - {$kartu->mapel} (Pertemuan ke-{$pertemuan}) tersimpan: "
             . "Hadir {$hitung['MASUK']}, Izin {$hitung['IZIN']}, Sakit {$hitung['SAKIT']}, Alpa {$hitung['ABSEN']}."
         );
     }
 
+    /** Tujuan setelah simpan: Rekap (absen susulan) atau Dashboard (absen hari ini). */
+    private function kembali(?array $kembaliRekap): RedirectResponse
+    {
+        return $kembaliRekap !== null
+            ? redirect()->route('guru.rekap-siswa', $kembaliRekap)
+            : redirect()->route('guru.dashboard');
+    }
+
+    /**
+     * Filter Rekap yang dipertahankan saat absen susulan, supaya guru kembali ke
+     * tampilan yang sama (kelas + rentang tanggal). Bila tidak ada, pakai kelas
+     * jadwal ini dan bulan dari tanggal yang diabsen.
+     */
+    private function filterRekap(Request $request, Jadwal $jadwal, string $tanggal): array
+    {
+        $dari   = $this->parseTanggal($request->query('dari'));
+        $sampai = $this->parseTanggal($request->query('sampai'));
+
+        if (! $dari || ! $sampai) {
+            $acuan  = $this->parseTanggal($tanggal) ?? Absen::sekarang();
+            $dari   = $acuan->copy()->startOfMonth();
+            $sampai = $acuan->copy()->endOfMonth();
+        }
+
+        $filter = [
+            'kelas_mapel' => $jadwal->kelas . '|' . $jadwal->mapel,
+            'dari'        => $dari->toDateString(),
+            'sampai'      => $sampai->toDateString(),
+        ];
+
+        if ($request->filled('periode') && ctype_digit((string) $request->query('periode'))) {
+            $filter['periode'] = (string) $request->query('periode');
+        }
+
+        return $filter;
+    }
+
     // =====================================================================
-    //  REKAP ABSEN SISWA (matriks tanggal x siswa)
+    //  REKAP ABSEN SISWA
+    //  - satu kelas: matriks lengkap + "Diabsen oleh" + Hapus Harian + Absen Susulan
+    //  - ALL (semua kelas yang diajar): matriks ringkas, tanpa info pengabsen/hapus
     // =====================================================================
     public function rekap(Request $request)
     {
@@ -143,7 +300,11 @@ class AbsenSiswaController extends Controller
         $opsi = $this->opsiKelasMapel($user, $guru);
 
         $kunci = (string) $request->query('kelas_mapel', '');
-        $terpilih = $opsi->firstWhere('key', $kunci) ?? $opsi->first();
+        $semua = $kunci === 'ALL' && $opsi->isNotEmpty();
+
+        $terpilih = $semua
+            ? ['kelas' => 'Semua Kelas', 'mapel' => null, 'key' => 'ALL']
+            : ($opsi->firstWhere('key', $kunci) ?? $opsi->first());
 
         // ---- rentang tanggal (periode pembelajaran atau manual) ----
         $periodeList = PeriodePembelajaran::orderBy('tanggal_mulai')->get();
@@ -172,27 +333,52 @@ class AbsenSiswaController extends Controller
         }
 
         $data = [
-            'opsi'        => $opsi,
-            'terpilih'    => $terpilih,
-            'periodeList' => $periodeList,
-            'periodeId'   => $periodeId,
-            'dari'        => $dari->toDateString(),
-            'sampai'      => $sampai->toDateString(),
-            'guru'        => $guru,
-            'kolom'       => collect(),
-            'rekap'       => collect(),
+            'opsi'         => $opsi,
+            'terpilih'     => $terpilih,
+            'semua'        => $semua,
+            'periodeList'  => $periodeList,
+            'periodeId'    => $periodeId,
+            'dari'         => $dari->toDateString(),
+            'sampai'       => $sampai->toDateString(),
+            'guru'         => $guru,
+            'kolom'        => collect(),
+            'rekap'        => collect(),
             'liburRentang' => collect(),
             'efektif'      => 0,
             'belumCount'   => 0,
+            'mapelBanyak'  => false,
         ];
 
         if (! $terpilih) {
             return view('guru.rekap_siswa', $data);
         }
 
-        $kelas = $terpilih['kelas'];
-        $mapel = $terpilih['mapel'];
+        $liburRentang = HariLibur::whereBetween('tanggal', [$dari->toDateString(), $sampai->toDateString()])
+            ->orderBy('tanggal')->get()
+            ->keyBy(fn ($l) => $l->tanggal->toDateString());
 
+        if ($semua) {
+            $hasil = $opsi->map(fn ($o) => ['o' => $o] + $this->hitungMatriks(
+                $o['kelas'], $o['mapel'], $dari, $sampai, $guru, $liburRentang
+            ));
+
+            $gabungan = $this->gabungkan($hasil);
+
+            return view('guru.rekap_siswa', array_merge($data, $gabungan, ['liburRentang' => $liburRentang]));
+        }
+
+        $m = $this->hitungMatriks($terpilih['kelas'], $terpilih['mapel'], $dari, $sampai, $guru, $liburRentang);
+
+        return view('guru.rekap_siswa', array_merge($data, $m, ['liburRentang' => $liburRentang]));
+    }
+
+    /**
+     * Matriks satu kelas + mapel: kolom tanggal (semua pertemuan terjadwal), baris siswa, total, %.
+     *
+     * state kolom: sudah | belum | libur | hariini | depan
+     */
+    private function hitungMatriks(string $kelas, string $mapel, Carbon $dari, Carbon $sampai, $guru, Collection $liburRentang): array
+    {
         $siswas = Absen::siswaKelas($kelas);
 
         $q = DB::table('absensi_siswas')
@@ -206,18 +392,17 @@ class AbsenSiswaController extends Controller
             'absensi_siswas.is_pengganti', 'profiles.name as nama_guru',
         ]);
 
-        $liburRentang = HariLibur::whereBetween('tanggal', [$dari->toDateString(), $sampai->toDateString()])
-            ->orderBy('tanggal')->get()
-            ->keyBy(fn ($l) => $l->tanggal->toDateString());
-
-        $hariJadwal = Absen::whereKelas(Jadwal::query(), 'kelas', $kelas)
+        $jadwals = Absen::whereKelas(Jadwal::query(), 'kelas', $kelas)
             ->whereRaw('lower(mapel) = ?', [mb_strtolower($mapel)])
-            ->pluck('hari')
-            ->map(fn ($h) => mb_strtolower((string) $h))
-            ->unique()->all();
+            ->get();
 
-        // ---- kolom tanggal: SEMUA tanggal pertemuan dalam rentang ----
-        // state: sudah (diabsen) | belum (terlewat, belum diabsen) | libur | hariini | depan
+        $hariJadwal = $jadwals->pluck('hari')->map(fn ($h) => mb_strtolower((string) $h))->unique()->all();
+
+        $penggantiMap = $jadwals->isEmpty() ? collect() : JadwalPengganti::whereIn('jadwal_id', $jadwals->pluck('id'))
+            ->whereBetween('tanggal', [$dari->toDateString(), $sampai->toDateString()])
+            ->get()
+            ->keyBy(fn ($p) => $p->jadwal_id . '|' . $p->tanggal->toDateString());
+
         $hariIni = Absen::sekarang()->startOfDay();
         $kolom   = [];
         $nilai   = [];
@@ -233,6 +418,7 @@ class AbsenSiswaController extends Controller
                     'keterangan' => null,
                     'guru'       => $r->nama_guru ?: '-',
                     'pengganti'  => (bool) $r->is_pengganti,
+                    'susulan'    => null,
                 ];
             }
 
@@ -243,27 +429,25 @@ class AbsenSiswaController extends Controller
 
         while ($kursor->lte($sampai)) {
             $tgl       = $kursor->toDateString();
-            $terjadwal = in_array(mb_strtolower(Absen::namaHari($kursor)), $hariJadwal, true);
+            $namaHari  = mb_strtolower(Absen::namaHari($kursor));
+            $terjadwal = in_array($namaHari, $hariJadwal, true);
             $libur     = $liburRentang->get($tgl);
             $adaData   = isset($kolom[$tgl]);
 
             if ($libur && ($adaData || $terjadwal)) {
                 $kolom[$tgl] = (object) [
-                    'tanggal'    => $tgl,
-                    'carbon'     => $kursor->copy(),
-                    'state'      => 'libur',
-                    'keterangan' => $libur->keterangan,
-                    'guru'       => null,
-                    'pengganti'  => false,
+                    'tanggal' => $tgl, 'carbon' => $kursor->copy(), 'state' => 'libur',
+                    'keterangan' => $libur->keterangan, 'guru' => null, 'pengganti' => false, 'susulan' => null,
                 ];
             } elseif (! $adaData && $terjadwal) {
+                $state = $kursor->lt($hariIni) ? 'belum' : ($kursor->eq($hariIni) ? 'hariini' : 'depan');
+
                 $kolom[$tgl] = (object) [
-                    'tanggal'    => $tgl,
-                    'carbon'     => $kursor->copy(),
-                    'state'      => $kursor->lt($hariIni) ? 'belum' : ($kursor->eq($hariIni) ? 'hariini' : 'depan'),
-                    'keterangan' => null,
-                    'guru'       => null,
-                    'pengganti'  => false,
+                    'tanggal' => $tgl, 'carbon' => $kursor->copy(), 'state' => $state,
+                    'keterangan' => null, 'guru' => null, 'pengganti' => false,
+                    'susulan' => $state === 'belum'
+                        ? $this->infoSusulan($jadwals, $penggantiMap, $namaHari, $tgl, $guru)
+                        : null,
                 ];
             }
 
@@ -281,8 +465,11 @@ class AbsenSiswaController extends Controller
         $rekap = $siswas->map(function ($s) use ($kolom, $nilai, $efektif) {
             $total = ['H' => 0, 'I' => 0, 'S' => 0, 'A' => 0];
             $sel   = [];
+            $st    = [];
 
             foreach ($kolom as $tgl => $k) {
+                $st[$tgl] = $k->state;
+
                 if ($k->state !== 'sudah') {
                     $sel[$tgl] = null;
                     continue;
@@ -298,20 +485,123 @@ class AbsenSiswaController extends Controller
 
             return (object) [
                 'id'     => $s->id,
+                'nisn'   => $s->nisn ?? null,
                 'nama'   => $s->nama,
                 'sel'    => $sel,
+                'st'     => $st,
                 'total'  => $total,
                 'persen' => $efektif > 0 ? round($total['H'] / $efektif * 100, 1) : null,
             ];
         });
 
-        return view('guru.rekap_siswa', array_merge($data, [
-            'kolom'        => $kolom,
-            'rekap'        => $rekap,
-            'liburRentang' => $liburRentang,
-            'efektif'      => $efektif,
-            'belumCount'   => $belumCount,
-        ]));
+        return compact('kolom', 'rekap', 'efektif', 'belumCount');
+    }
+
+    /** Siapa yang boleh mengisi absen susulan untuk tanggal terlewat ini. */
+    private function infoSusulan(Collection $jadwals, Collection $penggantiMap, string $namaHari, string $tgl, $guru): ?array
+    {
+        $kandidat = $jadwals->filter(fn ($j) => mb_strtolower((string) $j->hari) === $namaHari);
+        $pilihan  = null;
+
+        foreach ($kandidat as $j) {
+            $p      = $penggantiMap->get($j->id . '|' . $tgl);
+            $idPj   = $p ? $p->guru_id : $j->guru_id;
+            $namaPj = $p ? $p->nama_guru : $j->nama_guru;
+
+            $boleh = $guru && (
+                $idPj !== null
+                    ? (string) $guru->id === (string) $idPj
+                    : mb_strtolower((string) $j->nama_guru) === mb_strtolower((string) $guru->nama)
+            );
+
+            $info = ['jadwal_id' => $j->id, 'boleh' => (bool) $boleh, 'nama' => $namaPj, 'pengganti' => $p !== null];
+
+            if ($boleh) {
+                return $info;
+            }
+
+            $pilihan ??= $info;
+        }
+
+        return $pilihan;
+    }
+
+    /** Gabungkan matriks beberapa kelas menjadi satu tabel (mode "Semua Kelas"). */
+    private function gabungkan(Collection $hasil): array
+    {
+        $perTanggal = [];
+
+        foreach ($hasil as $h) {
+            foreach ($h['kolom'] as $tgl => $k) {
+                $perTanggal[$tgl][] = $k;
+            }
+        }
+
+        ksort($perTanggal);
+
+        $kolom = collect($perTanggal)->map(function ($daftar, $tgl) {
+            $st = collect($daftar)->pluck('state');
+
+            $agregat = $st->contains('belum') ? 'belum'
+                : ($st->every(fn ($s) => $s === 'libur') ? 'libur'
+                : ($st->contains('sudah') ? 'sudah'
+                : ($st->contains('hariini') ? 'hariini' : 'depan')));
+
+            $libur = collect($daftar)->firstWhere('state', 'libur');
+
+            return (object) [
+                'tanggal'    => $tgl,
+                'carbon'     => $daftar[0]->carbon,
+                'state'      => $agregat,
+                'keterangan' => $libur->keterangan ?? null,
+                'guru'       => null,
+                'pengganti'  => false,
+                'susulan'    => null,
+            ];
+        });
+
+        $baris = [];
+
+        foreach ($hasil as $h) {
+            foreach ($h['rekap'] as $r) {
+                $sel = [];
+                $st  = [];
+
+                foreach ($kolom as $tgl => $_) {
+                    if (isset($h['kolom'][$tgl])) {
+                        $sel[$tgl] = $r->sel[$tgl] ?? null;
+                        $st[$tgl]  = $r->st[$tgl] ?? 'kosong';
+                    } else {
+                        $sel[$tgl] = null;
+                        $st[$tgl]  = 'kosong';   // kelas ini tidak ada pertemuan di tanggal tsb
+                    }
+                }
+
+                $baris[] = (object) [
+                    'id'     => $r->id,
+                    'nisn'   => $r->nisn,
+                    'nama'   => $r->nama,
+                    'kelas'  => $h['o']['kelas'],
+                    'mapel'  => $h['o']['mapel'],
+                    'sel'    => $sel,
+                    'st'     => $st,
+                    'total'  => $r->total,
+                    'persen' => $r->persen,
+                ];
+            }
+        }
+
+        $rekap = collect($baris)
+            ->sortBy(fn ($r) => $r->kelas . '|' . $r->mapel . '|' . mb_strtolower($r->nama), SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
+
+        return [
+            'kolom'       => $kolom,
+            'rekap'       => $rekap,
+            'efektif'     => 0,
+            'belumCount'  => (int) $hasil->sum('belumCount'),
+            'mapelBanyak' => $hasil->pluck('o.mapel')->map(fn ($m) => mb_strtolower((string) $m))->unique()->count() > 1,
+        ];
     }
 
     // =====================================================================
