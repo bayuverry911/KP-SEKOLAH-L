@@ -12,7 +12,12 @@ use App\Http\Controllers\Admin\SppController;
 use App\Http\Controllers\Admin\JadwalController;
 use App\Http\Controllers\Admin\DashboardController; // <--- DITAMBAHKAN UNTUK DASHBOARD ADMIN DINAMIS
 use App\Http\Controllers\Admin\KalenderAkademikController;
+use App\Http\Controllers\Admin\RekapUtamaController;
+use App\Http\Controllers\Admin\IzinGuruApprovalController;
+use App\Http\Controllers\Admin\KenaikanKelasController;
+use App\Http\Controllers\IzinGuruController;
 use App\Http\Controllers\AbsenSiswaController;
+use App\Http\Controllers\AbsenUtamaController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AbsensiGuruController;
 use App\Models\User;
@@ -78,11 +83,26 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
 
     // Kalender akademik: hari libur nasional/sekolah + periode pembelajaran
     Route::get('/kalender', [KalenderAkademikController::class, 'index'])->name('kalender.index');
+    Route::post('/kalender/tahun', [KalenderAkademikController::class, 'storeTahun'])->name('kalender.tahun.store');
+    Route::patch('/kalender/tahun/{tahun}/aktif', [KalenderAkademikController::class, 'aktifkanTahun'])->name('kalender.tahun.aktif');
+    Route::delete('/kalender/tahun/{tahun}', [KalenderAkademikController::class, 'destroyTahun'])->name('kalender.tahun.destroy');
     Route::post('/kalender/libur', [KalenderAkademikController::class, 'storeLibur'])->name('kalender.libur.store');
     Route::post('/kalender/libur-tetap', [KalenderAkademikController::class, 'isiLiburTetap'])->name('kalender.libur.tetap');
     Route::delete('/kalender/libur/{libur}', [KalenderAkademikController::class, 'destroyLibur'])->name('kalender.libur.destroy');
     Route::post('/kalender/periode', [KalenderAkademikController::class, 'storePeriode'])->name('kalender.periode.store');
     Route::delete('/kalender/periode/{periode}', [KalenderAkademikController::class, 'destroyPeriode'])->name('kalender.periode.destroy');
+
+    // Persetujuan izin guru
+    Route::get('/izin', [IzinGuruApprovalController::class, 'index'])->name('izin.index');
+    Route::patch('/izin/{izin}/setujui', [IzinGuruApprovalController::class, 'setujui'])->name('izin.setujui');
+    Route::patch('/izin/{izin}/tolak', [IzinGuruApprovalController::class, 'tolak'])->name('izin.tolak');
+    Route::get('/izin/{izin}/bukti', [IzinGuruApprovalController::class, 'bukti'])->name('izin.bukti');
+
+    // Kenaikan kelas & kelulusan (riwayat kelas_siswas)
+    Route::get('/kenaikan-kelas', [KenaikanKelasController::class, 'index'])->name('kenaikan.index');
+    Route::post('/kenaikan-kelas', [KenaikanKelasController::class, 'proses'])->name('kenaikan.proses');
+
+    Route::get('/rekap-utama', [RekapUtamaController::class, 'index'])->name('rekap-utama');
 
     Route::get('/absen', [AbsensiGuruController::class, 'rekapAdminIndex'])->name('absen');
     Route::get('/spp', [SppController::class, 'index'])->name('spp.index');
@@ -112,6 +132,20 @@ Route::middleware(['auth', 'role:guru'])->prefix('guru')->name('guru.')->group(f
         ->where('tanggal', '\d{4}-\d{2}-\d{2}')->name('absen-siswa.susulan');
     Route::post('/absen-siswa/{jadwal}/susulan/{tanggal}', [AbsenSiswaController::class, 'simpanSusulan'])
         ->where('tanggal', '\d{4}-\d{2}-\d{2}')->name('absen-siswa.susulan.simpan');
+
+    // Pengajuan izin guru (upload bukti)
+    Route::get('/izin', [IzinGuruController::class, 'index'])->name('izin.index');
+    Route::post('/izin', [IzinGuruController::class, 'store'])->name('izin.store');
+    Route::get('/izin/{izin}/bukti', [IzinGuruController::class, 'bukti'])->name('izin.bukti');
+
+    // Absensi Utama (jam ke-1): sekali per kelas per hari, terkunci setelah submit
+    Route::get('/absen-utama/{jadwal}', [AbsenUtamaController::class, 'form'])->name('absen-utama.form');
+    Route::post('/absen-utama/{jadwal}', [AbsenUtamaController::class, 'simpan'])->name('absen-utama.simpan');
+    Route::get('/rekap-utama', [AbsenUtamaController::class, 'rekap'])->name('rekap-utama');
+    Route::get('/absen-utama/{jadwal}/susulan/{tanggal}', [AbsenUtamaController::class, 'formSusulan'])
+        ->where('tanggal', '\d{4}-\d{2}-\d{2}')->name('absen-utama.susulan');
+    Route::post('/absen-utama/{jadwal}/susulan/{tanggal}', [AbsenUtamaController::class, 'simpanSusulan'])
+        ->where('tanggal', '\d{4}-\d{2}-\d{2}')->name('absen-utama.susulan.simpan');
 
     // 4. Rekap Absen Siswa
     Route::get('/rekap-siswa', [AbsenSiswaController::class, 'rekap'])->name('rekap-siswa');

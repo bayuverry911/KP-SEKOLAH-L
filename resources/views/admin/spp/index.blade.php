@@ -63,7 +63,7 @@
                                 <label class="block font-medium text-slate-500 mb-1">Untuk Bulan</label>
                                 <select name="bulan" required class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#24B9A1]">
                                     @foreach($daftarBulan as $bulan)
-                                        <option value="{{ $bulan }}" {{ (\Carbon\Carbon::now()->translatedFormat('F') === $bulan) ? 'selected' : '' }}>{{ $bulan }}</option>
+                                        <option value="{{ $bulan }}" {{ Carbon\Carbon::now()->translatedFormat('F') == $bulan ? 'selected' : '' }}>{{ $bulan }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -114,7 +114,7 @@
                             <select name="bulan" class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
                                 <option value="">Semua Bulan</option>
                                 @foreach($daftarBulan as $b)
-                                    <option value="{{ $b }}" {{ (request('bulan') === $b) ? 'selected' : '' }}>{{ $b }}</option>
+                                    <option value="{{ $b }}" {{ request('bulan') == $b ? 'selected' : '' }}>{{ $b }}</option>
                                 @endforeach
                             </select>
 
@@ -214,7 +214,9 @@
     </div>
 
     <!-- MODAL KUITANSI (lihat / cetak tanpa pindah tab) -->
-    <div id="modalKuitansi" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 sm:p-6">
+    <div id="modalKuitansi" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 sm:p-6"
+         data-otomatis-url="{{ session('kuitansi_id') ? route('admin.spp.kuitansi', ['spp' => session('kuitansi_id'), 'embed' => 1]) : '' }}"
+         data-otomatis-no="{{ session('kuitansi_no') }}">
         <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
             <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
                 <div>
@@ -245,7 +247,7 @@
             <h3 class="text-lg font-bold text-slate-900 mb-1">Koreksi Data SPP</h3>
             <p class="text-xs text-slate-500 mb-4">No. Kuitansi: <span id="editNo" class="font-mono font-bold text-slate-800"></span></p>
 
-            <form id="formEditSpp" method="POST" class="space-y-3 text-xs" data-url="{{ route('admin.spp.update', 'REPLACE_ID') }}">
+            <form id="formEditSpp" method="POST" class="space-y-3 text-xs" data-url="{{ route('admin.spp.update', '__ID__') }}">
                 @csrf
                 @method('PUT')
                 <div>
@@ -277,7 +279,6 @@
         </div>
     </div>
 
-    <!-- Script Javascript -->
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             // ===== KUITANSI DI MODAL =====
@@ -285,14 +286,13 @@
             const frameKuitansi = document.getElementById('frameKuitansi');
             const loadingKuitansi = document.getElementById('kuitansiLoading');
 
-            window.bukaKuitansi = function(url, nomor) {
+            function bukaKuitansi(url, nomor) {
                 document.getElementById('kuitansiNo').textContent = nomor || '';
                 loadingKuitansi.classList.remove('hidden');
                 frameKuitansi.classList.add('invisible');
                 frameKuitansi.src = url;
                 modalKuitansi.classList.remove('hidden');
             }
-            
             function tutupKuitansi() {
                 modalKuitansi.classList.add('hidden');
                 frameKuitansi.src = 'about:blank';
@@ -315,6 +315,12 @@
             modalKuitansi.addEventListener('click', e => { if (e.target === modalKuitansi) tutupKuitansi(); });
             document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modalKuitansi.classList.contains('hidden')) tutupKuitansi(); });
 
+            // Setelah simpan pembayaran, kuitansi langsung dibuka di modal
+            const kuitansiOtomatis = modalKuitansi.dataset.otomatisUrl;
+            if (kuitansiOtomatis) {
+                bukaKuitansi(kuitansiOtomatis, modalKuitansi.dataset.otomatisNo);
+            }
+
             // ===== KOREKSI SPP =====
             const modal = document.getElementById('modalEditSpp');
             const formEdit = document.getElementById('formEditSpp');
@@ -322,7 +328,7 @@
 
             document.querySelectorAll('.btn-edit-spp').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    formEdit.action = urlUpdate.replace('REPLACE_ID', btn.dataset.id);
+                    formEdit.action = urlUpdate.replace('__ID__', btn.dataset.id);
                     document.getElementById('editNo').textContent = btn.dataset.no;
                     document.getElementById('editNominal').value = btn.dataset.nominal;
                     document.getElementById('editMetode').value = btn.dataset.metode;
@@ -371,13 +377,5 @@
             });
         });
     </script>
-
-    @if(session('kuitansi_id'))
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            bukaKuitansi('{!! route("admin.spp.kuitansi", ["spp" => session("kuitansi_id"), "embed" => 1]) !!}', '{{ session("kuitansi_no") }}');
-        });
-    </script>
-    @endif
 </body>
 </html>

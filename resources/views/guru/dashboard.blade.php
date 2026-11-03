@@ -163,6 +163,12 @@
 
                                 </a>
                             </li>
+                        <li>
+                            <a href="{{ Route::has('guru.izin.index') ? route('guru.izin.index') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('guru.izin.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('guru.izin.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Pengajuan Izin
+                            </a>
+                        </li>
 
                         </ul>
 
@@ -194,6 +200,15 @@
                                     <span class="text-sm font-bold">•</span>
                                     Rekap Absen Siswa
 
+                                </a>
+                            </li>
+
+                            <li>
+                                <a href="{{ Route::has('guru.rekap-utama') ? route('guru.rekap-utama') : '#' }}"
+                                   class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none
+                                          {{ request()->routeIs('guru.rekap-utama') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                    <span class="text-sm font-bold">•</span>
+                                    Rekap Absensi Utama
                                 </a>
                             </li>
 
@@ -383,6 +398,54 @@
                     <div class="flex-1 space-y-6 min-w-0">
 
                         <!-- ================================================= -->
+                        <!-- ABSENSI UTAMA (JAM KE-1) - sekali per kelas/hari  -->
+                        <!-- ================================================= -->
+                        @if($utamaHariIni->isNotEmpty())
+                            <div>
+                                <h3 class="font-bold text-slate-700 text-sm mb-1">Absensi Utama (Jam Ke-1)</h3>
+                                <p class="text-[11px] text-slate-500 mb-3">Dilakukan satu kali oleh guru jam pertama. Terpisah dari absensi mata pelajaran.</p>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                                    @foreach($utamaHariIni as $u)
+                                        <div class="rounded-2xl p-4 shadow-md text-white flex flex-col justify-between min-h-[8.5rem]
+                                                    bg-gradient-to-b {{ $u->status === 'mulai' ? 'from-indigo-500 to-indigo-800' : ($u->status === 'sudah' ? 'from-[#2f9e6e] to-[#1d6b4a]' : 'from-slate-400 to-slate-500') }}">
+                                            <div>
+                                                <div class="flex justify-between items-start gap-2">
+                                                    <h4 class="font-bold text-sm">Kelas {{ $u->kelas }}</h4>
+                                                    <span class="text-[10px] font-semibold bg-white/20 px-2 py-0.5 rounded-lg">Jam ke-1 &bull; {{ $u->jam_masuk }}</span>
+                                                </div>
+                                                <p class="text-[11px] text-white/90 mt-1"><i class="fa-solid fa-users text-[9px] mr-1"></i>{{ $u->jumlah_siswa }} siswa</p>
+                                                @if($u->status === 'sudah')
+                                                    <p class="mt-1 text-[10px] font-semibold text-white/95">
+                                                        <i class="fa-solid fa-lock mr-1"></i>Diselesaikan oleh: {{ $u->selesai_oleh }}
+                                                    </p>
+                                                @endif
+                                            </div>
+
+                                            <div class="mt-3">
+                                                @if($u->status === 'mulai')
+                                                    <a href="{{ route('guru.absen-utama.form', $u->jadwal_id) }}"
+                                                       class="block text-center text-xs font-bold py-2 rounded-full bg-white text-indigo-800 hover:bg-indigo-50 transition">
+                                                        Mulai Absensi Utama <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i>
+                                                    </a>
+                                                @elseif($u->status === 'sudah')
+                                                    <a href="{{ route('guru.absen-utama.form', $u->jadwal_id) }}"
+                                                       class="block text-center text-xs font-bold py-2 rounded-full bg-white/25 hover:bg-white/35 transition">
+                                                        <i class="fa-solid fa-eye mr-1"></i> Lihat (Terkunci)
+                                                    </a>
+                                                @else
+                                                    <span class="block text-center text-xs font-bold py-2 rounded-full bg-white/25 cursor-not-allowed">
+                                                        {{ $u->status === 'libur' ? 'Libur' : 'Belum Waktunya' }}
+                                                    </span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
+                        <!-- ================================================= -->
                         <!-- JADWAL MENGAJAR HARI INI (kartu per jadwal)       -->
                         <!-- ================================================= -->
 
@@ -451,6 +514,12 @@
                                                     Hari ini diajar oleh {{ $k->diganti_oleh }}
                                                 </p>
                                             @endif
+
+                                            @if($k->diabsen_oleh)
+                                                <p class="mt-1 text-[10px] font-semibold text-white/95">
+                                                    <i class="fa-solid fa-user-check mr-1"></i>Diabsen oleh: {{ $k->diabsen_oleh }}
+                                                </p>
+                                            @endif
                                         </div>
 
                                         <div class="mt-3">
@@ -471,6 +540,11 @@
                                                     {{ $label }}
                                                 </span>
                                             @endif
+
+                                            <a href="{{ route('guru.rekap-siswa', ['kelas_mapel' => $k->kelas . '|' . $k->mapel]) }}"
+                                               class="mt-2 block text-center text-[11px] font-semibold text-white/90 hover:text-white underline underline-offset-2">
+                                                <i class="fa-solid fa-table-list mr-1"></i> Rekap Kelas {{ $k->kelas }}
+                                            </a>
                                         </div>
 
                                     </div>

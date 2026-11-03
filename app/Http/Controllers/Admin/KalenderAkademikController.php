@@ -5,23 +5,86 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\HariLibur;
 use App\Models\PeriodePembelajaran;
+use App\Models\TahunPelajaran;
+use App\Services\AbsenSiswaService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Kalender akademik: tanggal merah (hari libur) & periode pembelajaran.
- * Dipakai oleh Rekap Absen Siswa (penanda libur + filter rentang pembelajaran).
+ * Kalender akademik: Tahun Pelajaran, hari libur (tanggal merah) dan periode pembelajaran.
+ * Dipakai Rekap Absen Siswa: hari libur tidak dihitung sebagai hari efektif,
+ * dan tahun pelajaran aktif membatasi/mengarahkan filter tanggal guru.
  */
 class KalenderAkademikController extends Controller
 {
     public function index(Request $request)
     {
-        $tahun = (int) $request->query('tahun', date('Y'));
+        $tahunList = TahunPelajaran::orderByDesc('tanggal_mulai')->get();
 
-        $liburs = HariLibur::whereYear('tanggal', $tahun)->orderBy('tanggal')->get();
+        $tahun = $request->filled('tahun')
+            ? $tahunList->firstWhere('id', (int) $request->query('tahun'))
+            : null;
+        $tahun ??= $tahunList->firstWhere('aktif', true) ?? $tahunList->first();
+
+        $blok   = [];
+        $liburs = collect();
+
+        if ($tahun) {
+            $liburs = HariLibur::whereBetween('tanggal', [$tahun->tanggal_mulai->toDateString(), $tahun->tanggal_selesai->toDateString()])
+                ->orderBy('tanggal')->get()
+                ->keyBy(fn ($l) => $l->tanggal->toDateString());
+
+            $blok = $this->bulanBlok($tahun->tanggal_mulai, $tahun->tanggal_selesai, $liburs);
+        }
+
         $periodes = PeriodePembelajaran::orderBy('tanggal_mulai')->get();
 
-        return view('admin.kalender.index', compact('liburs', 'periodes', 'tahun'));
+        return view('admin.kalender.index', compact('tahunList', 'tahun', 'blok', 'liburs', 'periodes'));
     }
+
+    // ---------------------------------------------------------------- Tahun Pelajaran
+
+    public function storeTahun(Request $request)
+    {
+        $data = $request->validate([
+            'nama'            => 'required|string|max:30',
+            'tanggal_mulai'   => 'required|date',
+            'tanggal_selesai' => 'required|date|after:tanggal_mulai',
+        ], [
+            'tanggal_selesai.after' => 'Tanggal selesai harus setelah tanggal mulai.',
+        ]);
+
+        if (Carbon::parse($data['tanggal_mulai'])->diffInDays(Carbon::parse($data['tanggal_selesai'])) > 400) {
+            return redirect()->back()->withInput()->with('error', 'Rentang Tahun Pelajaran maksimal sekitar 13 bulan.');
+        }
+
+        $tahun = TahunPelajaran::create($data + ['aktif' => ! TahunPelajaran::where('aktif', true)->exists()]);
+
+        return redirect()->route('admin.kalender.index', ['tahun' => $tahun->id])
+            ->with('success', "Tahun Pelajaran {$tahun->nama} ditambahkan.");
+    }
+
+    public function aktifkanTahun(TahunPelajaran $tahun)
+    {
+        DB::transaction(function () use ($tahun) {
+            TahunPelajaran::query()->update(['aktif' => false]);
+            $tahun->update(['aktif' => true]);
+        });
+
+        return redirect()->route('admin.kalender.index', ['tahun' => $tahun->id])
+            ->with('success', "Tahun Pelajaran {$tahun->nama} dijadikan aktif (default filter akun guru).");
+    }
+
+    public function destroyTahun(TahunPelajaran $tahun)
+    {
+        $tahun->delete();
+
+        return redirect()->route('admin.kalender.index')->with('success', 'Tahun Pelajaran dihapus. Data hari libur tetap tersimpan.');
+    }
+
+    // ---------------------------------------------------------------- Hari libur
 
     public function storeLibur(Request $request)
     {
@@ -35,19 +98,18 @@ class KalenderAkademikController extends Controller
 
         HariLibur::create($data);
 
-        return redirect()->route('admin.kalender.index', ['tahun' => substr($data['tanggal'], 0, 4)])
-            ->with('success', 'Hari libur berhasil ditambahkan.');
+        return redirect()->back()->with('success', 'Hari libur berhasil ditambahkan.');
     }
 
     /**
-     * Isi cepat libur nasional yang tanggalnya TETAP setiap tahun.
+     * Isi cepat libur nasional yang tanggalnya TETAP setiap tahun, pada rentang Tahun Pelajaran.
      * Libur yang berubah tiap tahun (Idul Fitri, Idul Adha, Nyepi, Waisak, dll.)
-     * harus diinput manual sesuai SKB 3 Menteri tahun berjalan.
+     * harus ditandai manual sesuai SKB 3 Menteri tahun berjalan.
      */
     public function isiLiburTetap(Request $request)
     {
-        $request->validate(['tahun' => 'required|integer|between:2020,2100']);
-        $tahun = (int) $request->tahun;
+        $request->validate(['tahun_id' => 'required|exists:tahun_pelajarans,id']);
+        $tahun = TahunPelajaran::findOrFail($request->tahun_id);
 
         $tetap = [
             '01-01' => 'Tahun Baru Masehi',
@@ -58,26 +120,33 @@ class KalenderAkademikController extends Controller
         ];
 
         $baru = 0;
-        foreach ($tetap as $md => $nama) {
-            $tgl = "{$tahun}-{$md}";
-            if (! HariLibur::whereDate('tanggal', $tgl)->exists()) {
-                HariLibur::create(['tanggal' => $tgl, 'keterangan' => $nama, 'jenis' => 'nasional']);
-                $baru++;
+
+        for ($y = $tahun->tanggal_mulai->year; $y <= $tahun->tanggal_selesai->year; $y++) {
+            foreach ($tetap as $md => $nama) {
+                $tgl = Carbon::parse("{$y}-{$md}");
+
+                if ($tgl->lt($tahun->tanggal_mulai) || $tgl->gt($tahun->tanggal_selesai)) {
+                    continue;
+                }
+
+                if (! HariLibur::whereDate('tanggal', $tgl->toDateString())->exists()) {
+                    HariLibur::create(['tanggal' => $tgl->toDateString(), 'keterangan' => $nama, 'jenis' => 'nasional']);
+                    $baru++;
+                }
             }
         }
 
-        return redirect()->route('admin.kalender.index', ['tahun' => $tahun])
-            ->with('success', "{$baru} libur tanggal tetap ditambahkan untuk {$tahun}. Libur yang tanggalnya berubah tiap tahun (mis. Idul Fitri) tetap perlu diinput manual.");
+        return redirect()->back()->with('success', "{$baru} libur tanggal tetap ditambahkan. Libur yang tanggalnya berubah tiap tahun (mis. Idul Fitri) tandai manual di kalender.");
     }
 
     public function destroyLibur(HariLibur $libur)
     {
-        $tahun = $libur->tanggal->year;
         $libur->delete();
 
-        return redirect()->route('admin.kalender.index', ['tahun' => $tahun])
-            ->with('success', 'Hari libur dihapus.');
+        return redirect()->back()->with('success', 'Hari libur dihapus.');
     }
+
+    // ---------------------------------------------------------------- Periode pembelajaran
 
     public function storePeriode(Request $request)
     {
@@ -99,5 +168,55 @@ class KalenderAkademikController extends Controller
         $periode->delete();
 
         return redirect()->back()->with('success', 'Periode pembelajaran dihapus.');
+    }
+
+    // ---------------------------------------------------------------- Helper
+
+    /** Blok kalender per bulan (minggu Senin-Minggu) untuk rentang Tahun Pelajaran. */
+    private function bulanBlok(Carbon $mulai, Carbon $selesai, Collection $liburs): array
+    {
+        $blok   = [];
+        $kursor = $mulai->copy()->startOfMonth();
+
+        while ($kursor->lte($selesai)) {
+            $awal  = $kursor->copy();
+            $akhir = $kursor->copy()->endOfMonth();
+            $sel   = array_fill(0, $awal->dayOfWeekIso - 1, null);
+            $daftarLibur = [];
+
+            for ($d = $awal->copy(); $d->lte($akhir); $d->addDay()) {
+                $tgl   = $d->toDateString();
+                $libur = $liburs->get($tgl);
+                $luar  = $d->lt($mulai) || $d->gt($selesai);
+
+                if ($libur && ! $luar) {
+                    $daftarLibur[] = ['hari' => $d->day, 'keterangan' => $libur->keterangan];
+                }
+
+                $sel[] = [
+                    'tgl'     => $tgl,
+                    'hari'    => $d->day,
+                    'libur'   => $libur?->keterangan,
+                    'jenis'   => $libur?->jenis,
+                    'id'      => $libur?->id,
+                    'weekend' => $d->dayOfWeekIso >= 6,
+                    'luar'    => $luar,
+                ];
+            }
+
+            while (count($sel) % 7 !== 0) {
+                $sel[] = null;
+            }
+
+            $blok[] = [
+                'judul'  => AbsenSiswaService::BULAN[$kursor->month] . ' ' . $kursor->year,
+                'minggu' => array_chunk($sel, 7),
+                'libur'  => $daftarLibur,
+            ];
+
+            $kursor->addMonth();
+        }
+
+        return $blok;
     }
 }

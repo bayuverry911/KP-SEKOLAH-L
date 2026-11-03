@@ -6,6 +6,7 @@ use App\Models\HariLibur;
 use App\Models\Jadwal;
 use App\Models\JadwalPengganti;
 use App\Models\PeriodePembelajaran;
+use App\Models\TahunPelajaran;
 use App\Services\AbsenSiswaService as Absen;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -89,11 +90,14 @@ class AbsenSiswaController extends Controller
 
     private function tampilForm(Jadwal $jadwal, object $kartu, Carbon $tanggal, string $aksi, bool $susulan, ?string $kembali = null)
     {
-        $siswas    = Absen::siswaKelas($kartu->kelas);
+        $siswas    = Absen::siswaKelas($kartu->kelas, $tanggal);
         $pertemuan = Absen::pertemuanBerikutnya($kartu->kelas, $kartu->mapel, $tanggal->toDateString());
         $now       = $tanggal; // tanggal absen (dikunci) yang ditampilkan di form
 
-        return view('guru.dashboard_absen_siswa', compact('jadwal', 'kartu', 'siswas', 'pertemuan', 'now', 'aksi', 'susulan', 'kembali'));
+        // Status Absensi Utama (sekolah) pada tanggal ini, agar guru mapel bisa membandingkan
+        $utamaInfo = Absen::infoUtama($kartu->kelas, $tanggal->toDateString());
+
+        return view('guru.dashboard_absen_siswa', compact('jadwal', 'kartu', 'siswas', 'pertemuan', 'now', 'aksi', 'susulan', 'kembali', 'utamaInfo'));
     }
 
     /**
@@ -176,7 +180,7 @@ class AbsenSiswaController extends Controller
         ]);
 
         $user   = Auth::user();
-        $siswas = Absen::siswaKelas($kartu->kelas);
+        $siswas = Absen::siswaKelas($kartu->kelas, Carbon::parse($tanggal, Absen::TZ));
 
         if ($siswas->isEmpty()) {
             return redirect()->route('guru.dashboard')
@@ -299,9 +303,9 @@ class AbsenSiswaController extends Controller
         $guru = Absen::guruDari($user);
         $opsi = $this->opsiKelasMapel($user, $guru);
 
-        $kunci = (string) $request->query('kelas_mapel', '');
-        $semua = $kunci === 'ALL' && $opsi->isNotEmpty();
-
+        // Filter kelas + mapel milik guru ini; "ALL" = seluruh kelas yang ia ajar
+        $kunci    = (string) $request->query('kelas_mapel', '');
+        $semua    = $kunci === 'ALL' && $opsi->isNotEmpty();
         $terpilih = $semua
             ? ['kelas' => 'Semua Kelas', 'mapel' => null, 'key' => 'ALL']
             : ($opsi->firstWhere('key', $kunci) ?? $opsi->first());
@@ -310,6 +314,17 @@ class AbsenSiswaController extends Controller
         $periodeList = PeriodePembelajaran::orderBy('tanggal_mulai')->get();
         $periodeId   = $request->query('periode');
         $periode     = $periodeId ? $periodeList->firstWhere('id', (int) $periodeId) : null;
+
+        // Kunjungan pertama (tanpa filter): default ke periode pembelajaran yang mencakup hari ini
+        $tahunAktif = TahunPelajaran::aktif();
+
+        if (! $request->hasAny(['dari', 'sampai', 'periode'])) {
+            $hariIniTgl = Absen::sekarang()->startOfDay();
+            $periode = $periodeList->first(
+                fn ($p) => $p->tanggal_mulai->lte($hariIniTgl) && $p->tanggal_selesai->gte($hariIniTgl)
+            );
+            $periodeId = $periode?->id;
+        }
 
         $dari   = $this->parseTanggal($request->query('dari'));
         $sampai = $this->parseTanggal($request->query('sampai'));
@@ -341,6 +356,7 @@ class AbsenSiswaController extends Controller
             'dari'         => $dari->toDateString(),
             'sampai'       => $sampai->toDateString(),
             'guru'         => $guru,
+            'tahunAktif'   => $tahunAktif,
             'kolom'        => collect(),
             'rekap'        => collect(),
             'liburRentang' => collect(),
@@ -379,7 +395,7 @@ class AbsenSiswaController extends Controller
      */
     private function hitungMatriks(string $kelas, string $mapel, Carbon $dari, Carbon $sampai, $guru, Collection $liburRentang): array
     {
-        $siswas = Absen::siswaKelas($kelas);
+        $siswas = Absen::siswaKelas($kelas, $dari);
 
         $q = DB::table('absensi_siswas')
             ->leftJoin('profiles', 'profiles.id', '=', 'absensi_siswas.user_id')
@@ -403,9 +419,9 @@ class AbsenSiswaController extends Controller
             ->get()
             ->keyBy(fn ($p) => $p->jadwal_id . '|' . $p->tanggal->toDateString());
 
-        $hariIni = Absen::sekarang()->startOfDay();
-        $kolom   = [];
-        $nilai   = [];
+        $hariIni      = Absen::sekarang()->startOfDay();
+        $kolom        = [];
+        $nilai        = [];
 
         foreach ($rows as $r) {
             $tgl = substr((string) $r->tanggal, 0, 10);

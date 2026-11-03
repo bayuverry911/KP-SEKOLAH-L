@@ -125,6 +125,18 @@
                                 <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.kalender.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Kalender Akademik
                             </a>
                         </li>
+                        <li>
+                            <a href="{{ Route::has('admin.kenaikan.index') ? route('admin.kenaikan.index') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.kenaikan.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.kenaikan.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Kenaikan Kelas
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ Route::has('admin.izin.index') ? route('admin.izin.index') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.izin.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.izin.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Persetujuan Izin Guru
+                            </a>
+                        </li>
                             <li>
                                 <a href="{{ Route::has('admin.siswa.index') ? route('admin.siswa.index') : '#' }}" 
                                    class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.siswa.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">

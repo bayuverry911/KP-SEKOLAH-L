@@ -1,3 +1,4 @@
+@use('App\Services\AbsenSiswaService', 'Absen')
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -8,163 +9,244 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-[#EAF0F6] font-sans text-slate-800 antialiased overflow-x-hidden">
+@php
+    $hariIni      = \Carbon\Carbon::now('Asia/Jakarta');
+    $sudahMasuk   = (bool) optional($absensiHariIni)->jam_masuk;
+    $sudahPulang  = (bool) optional($absensiHariIni)->jam_keluar;
+    $lengkap      = $sudahMasuk && $sudahPulang;
+    $terkunciIzin = (bool) optional($absensiHariIni)->terkunci;
+    $statusHari   = optional($absensiHariIni)->status;
+    $radiusTeks   = \App\Support\Geofence::format((int) config('sekolah.radius_meter'));
+    $defaultAksi  = $sudahMasuk ? 'pulang' : 'masuk';
+@endphp
+
+    <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 z-40 hidden lg:hidden backdrop-blur-sm"></div>
 
     <div class="flex min-h-screen relative">
         @include('layouts.partials.sidebar')
 
         <main class="flex-1 flex flex-col min-w-0 overflow-y-auto min-h-screen">
-            <header class="bg-transparent px-4 sm:px-8 pt-4 pb-2 flex justify-between items-center">
-                <h1 class="text-xs font-bold text-slate-400 uppercase tracking-widest">PRESENSI GURU</h1>
+            <header class="bg-transparent px-4 sm:px-8 pt-4 pb-2 flex justify-between items-center gap-3">
+                <div class="flex items-center gap-3">
+                    <button onclick="toggleSidebar()" class="lg:hidden text-slate-600 p-2 rounded-lg bg-white shadow-sm"><i class="fa-solid fa-bars text-lg"></i></button>
+                    <h1 class="text-xs font-bold text-slate-400 uppercase tracking-widest">PRESENSI GURU</h1>
+                </div>
                 <div class="text-xs font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-lg shadow-sm border border-slate-200/60">
                     <i class="fa-regular fa-calendar text-[#24B9A1] mr-1"></i>
-                    <span>{{ \Carbon\Carbon::now('Asia/Jakarta')->translatedFormat('l, d F Y') }}</span>
+                    <span>{{ Absen::tanggalPanjang($hariIni) }}</span>
                 </div>
             </header>
 
-            <div class="px-4 sm:px-8 pb-8 flex items-center justify-center min-h-[calc(100vh-80px)]">
-                <div class="bg-white rounded-3xl p-6 sm:p-10 shadow-xl border border-slate-100 w-full max-w-3xl">
-                    <h2 class="text-2xl font-bold text-center text-slate-900 mb-6">Presensi Guru</h2>
+            <div class="px-4 sm:px-8 pb-8 pt-2 flex justify-center">
+                <div class="w-full max-w-3xl space-y-5">
 
-                    @if(session('success'))
-                        <div class="mb-4 p-4 bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
-                            <i class="fa-solid fa-circle-check text-emerald-600"></i>
-                            <span>{{ session('success') }}</span>
+                    <!-- KARTU PROFIL + JAM -->
+                    <div class="rounded-3xl bg-gradient-to-r from-[#19A389] to-[#0D6353] text-white p-5 sm:p-6 shadow-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <p class="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Presensi Guru</p>
+                            <h2 class="text-xl sm:text-2xl font-extrabold mt-0.5">{{ Auth::user()->name }}</h2>
+                            <p class="text-xs text-white/80 mt-1">SMP Djojoredjo</p>
                         </div>
-                    @endif
-
-                    @if(session('error'))
-                        <div class="mb-4 p-4 bg-rose-100 border border-rose-300 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                            <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
-                            <span>{{ session('error') }}</span>
-                        </div>
-                    @endif
-
-                    <!-- STATUS PRESENSI HARI INI -->
-                    <div class="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row justify-around items-center gap-3 text-xs">
-                        <div class="flex items-center gap-2">
-                            <span class="font-semibold text-slate-600">Status Hari Ini:</span>
-                            @if(optional($absensiHariIni)->status)
-                                <span class="px-3 py-1 rounded-full font-bold 
-                                    {{ $absensiHariIni->status == 'Hadir' ? 'bg-emerald-100 text-emerald-700' : '' }}
-                                    {{ $absensiHariIni->status == 'Izin' ? 'bg-amber-100 text-amber-700' : '' }} {{$absensiHariIni->status == 'Sakit' ? 'bg-rose-100 text-rose-700' : '' }}">
-                                    {{ $absensiHariIni->status }} 
-                                    @if($absensiHariIni->jam_masuk) ({{ \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i') }} WIB)
-                                    @endif
-                                </span>
-                            @else
-                                <span class="px-3 py-1 rounded-full font-bold bg-slate-200 text-slate-600">Belum Mengisi Presensi</span>
-                            @endif
+                        <div class="text-left sm:text-right">
+                            <p class="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Waktu Sekarang</p>
+                            <p id="waktu_otomatis" class="text-2xl sm:text-3xl font-extrabold tabular-nums">--:--:--</p>
                         </div>
                     </div>
 
-                    <!-- RIWAYAT JARAK PRESENSI HARI INI -->
-                    @if(optional($absensiHariIni)->jarak_masuk !== null or optional($absensiHariIni)->jarak_keluar !== null)
-                        <div class="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                            @if($absensiHariIni->jarak_masuk !== null)
-                                <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
-                                    <i class="fa-solid fa-location-dot text-emerald-600 text-lg"></i>
-                                    <div>
-                                        <p class="font-semibold text-emerald-800">Jarak saat presensi masuk</p>
-                                        <p class="text-emerald-700 font-bold">{{ \App\Support\Geofence::format((int) $absensiHariIni->jarak_masuk) }} dari sekolah</p>
-                                    </div>
-                                </div>
+                    @if(session('success'))
+                        <div class="p-4 bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs rounded-2xl flex items-start gap-2">
+                            <i class="fa-solid fa-circle-check text-emerald-600 mt-0.5"></i><span>{{ session('success') }}</span>
+                        </div>
+                    @endif
+                    @if(session('error'))
+                        <div class="p-4 bg-rose-100 border border-rose-300 text-rose-800 text-xs rounded-2xl flex items-start gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-rose-600 mt-0.5"></i><span>{{ session('error') }}</span>
+                        </div>
+                    @endif
+
+                    <!-- RINGKASAN HARI INI -->
+                    <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-slate-900">Ringkasan Hari Ini</h3>
+                            @if($statusHari)
+                                <span class="px-3 py-1 rounded-full text-[11px] font-bold
+                                    {{ $statusHari === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : '' }}
+                                    {{ $statusHari === 'Izin' ? 'bg-amber-100 text-amber-700' : '' }}
+                                    {{ $statusHari === 'Sakit' ? 'bg-rose-100 text-rose-700' : '' }}">{{ $statusHari }}</span>
+                            @else
+                                <span class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-200 text-slate-600">Belum Presensi</span>
                             @endif
-                            @if($absensiHariIni->jarak_keluar !== null)
-                                <div class="p-3 rounded-2xl bg-blue-50 border border-blue-200 flex items-center gap-3">
-                                    <i class="fa-solid fa-location-dot text-blue-600 text-lg"></i>
-                                    <div>
-                                        <p class="font-semibold text-blue-800">Jarak saat presensi pulang</p>
-                                        <p class="text-blue-700 font-bold">{{ \App\Support\Geofence::format((int) $absensiHariIni->jarak_keluar) }} dari sekolah</p>
-                                    </div>
-                                </div>
-                            @endif
+                        </div>
+
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                <p class="text-slate-500 font-semibold"><i class="fa-solid fa-right-to-bracket text-emerald-500 mr-1"></i>Jam Masuk</p>
+                                <p class="text-lg font-extrabold text-slate-800 mt-1">{{ $sudahMasuk ? \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i') : '--:--' }}</p>
+                            </div>
+                            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                <p class="text-slate-500 font-semibold"><i class="fa-solid fa-right-from-bracket text-blue-500 mr-1"></i>Jam Pulang</p>
+                                <p class="text-lg font-extrabold text-slate-800 mt-1">{{ $sudahPulang ? \Carbon\Carbon::parse($absensiHariIni->jam_keluar)->format('H:i') : '--:--' }}</p>
+                            </div>
+                            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                <p class="text-slate-500 font-semibold"><i class="fa-solid fa-location-dot text-emerald-500 mr-1"></i>Jarak Masuk</p>
+                                <p class="text-lg font-extrabold text-slate-800 mt-1">{{ optional($absensiHariIni)->jarak_masuk !== null ? \App\Support\Geofence::format((int) $absensiHariIni->jarak_masuk) : '-' }}</p>
+                            </div>
+                            <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                <p class="text-slate-500 font-semibold"><i class="fa-solid fa-location-dot text-blue-500 mr-1"></i>Jarak Pulang</p>
+                                <p class="text-lg font-extrabold text-slate-800 mt-1">{{ optional($absensiHariIni)->jarak_keluar !== null ? \App\Support\Geofence::format((int) $absensiHariIni->jarak_keluar) : '-' }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if($terkunciIzin)
+                        <div class="p-4 bg-sky-50 border border-sky-200 rounded-2xl text-sky-900 text-xs font-semibold flex items-start gap-3">
+                            <i class="fa-solid fa-lock text-sky-600 text-base mt-0.5"></i>
+                            <span>Presensi hari ini terkunci: izin <b>{{ $statusHari }}</b> Anda sudah disetujui admin. {{ $absensiHariIni->keterangan }}</span>
                         </div>
                     @endif
 
                     <!-- FORM PRESENSI -->
-                    <form id="form_presensi" action="{{ route('guru.absen.store') }}" method="POST" class="space-y-5">
+                    <form id="form_presensi" action="{{ route('guru.absen.store') }}" method="POST">
                         @csrf
                         <input type="hidden" name="latitude" id="latitude">
                         <input type="hidden" name="longitude" id="longitude">
                         <input type="hidden" name="akurasi" id="akurasi">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                            <div>
-                                <label class="block font-medium text-slate-500 mb-1">Nama / NUPTK Guru</label>
-                                <input type="text" value="{{ Auth::user()->name }}" readonly class="w-full font-semibold p-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-700">
-                            </div>
-                            <div>
-                                <label class="block font-medium text-slate-500 mb-1">Waktu Sekarang (WIB)</label>
-                                <input type="text" id="waktu_otomatis" readonly class="w-full font-bold p-3 bg-teal-50 border border-teal-200 rounded-xl text-[#24B9A1]">
-                            </div>
-                        </div>
+                        <input type="hidden" name="status" id="in_status" value="Hadir" disabled>
+                        <input type="hidden" name="jenis_presensi" id="in_jenis" value="Pulang" disabled>
 
-                        <div>
-                            <label class="block text-xs font-medium text-slate-500 mb-1.5">Pilih Status Kehadiran</label>
-                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                <label class="cursor-pointer text-center">
-                                    <input type="radio" name="status" value="Hadir" class="peer hidden" checked>
-                                    <span class="py-2.5 rounded-xl text-xs font-semibold block peer-checked:bg-[#24B9A1] peer-checked:text-white bg-slate-100 text-slate-600 border border-slate-200 transition">Hadir</span>
-                                </label>
-                                <label class="cursor-pointer text-center">
-                                    <input type="radio" name="status" value="Izin" class="peer hidden">
-                                    <span class="py-2.5 rounded-xl text-xs font-semibold block peer-checked:bg-amber-500 peer-checked:text-white bg-slate-100 text-slate-600 border border-slate-200 transition">Izin</span>
-                                </label>
-                                <label class="cursor-pointer text-center">
-                                    <input type="radio" name="status" value="Sakit" class="peer hidden">
-                                    <span class="py-2.5 rounded-xl text-xs font-semibold block peer-checked:bg-rose-500 peer-checked:text-white bg-slate-100 text-slate-600 border border-slate-200 transition">Sakit</span>
-                                </label>
-                                <label class="cursor-pointer text-center">
-                                    <input type="radio" name="jenis_presensi" value="Pulang" class="peer hidden">
-                                    <span class="py-2.5 rounded-xl text-xs font-semibold block peer-checked:bg-blue-600 peer-checked:text-white bg-slate-100 text-slate-600 border border-slate-200 transition">Pulang</span>
-                                </label>
-                            </div>
-                            <p class="text-[10px] text-slate-400 mt-1">*Pilih "Pulang" jika ingin melakukan absensi jam kepulangan.</p>
-                        </div>
+                        <fieldset class="space-y-5 {{ $terkunciIzin ? 'opacity-50' : '' }}" {{ $terkunciIzin ? 'disabled' : '' }}>
 
-                        <div>
-                            <label class="block text-xs font-medium text-slate-500 mb-1.5">Keterangan / Alasan (Opsional untuk Izin/Sakit)</label>
-                            <textarea name="keterangan" rows="3" placeholder="Masukkan keterangan jika izin atau sakit..." class="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#24B9A1]"></textarea>
-                        </div>
+                            <!-- PILIH AKSI -->
+                            <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100">
+                                <h3 class="text-sm font-bold text-slate-900 mb-3">Pilih Presensi</h3>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <label class="cursor-pointer {{ $sudahMasuk ? 'cursor-not-allowed opacity-60' : '' }}">
+                                        <input type="radio" name="aksi" value="masuk" class="peer hidden" {{ $defaultAksi === 'masuk' && ! $sudahMasuk ? 'checked' : '' }} {{ $sudahMasuk ? 'disabled' : '' }}>
+                                        <span class="flex items-center gap-3 p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 transition peer-checked:border-[#19A389] peer-checked:bg-emerald-50">
+                                            <span class="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg"><i class="fa-solid fa-right-to-bracket"></i></span>
+                                            <span>
+                                                <span class="block text-sm font-bold text-slate-800">Presensi Masuk</span>
+                                                <span class="block text-[11px] text-slate-500">{{ $sudahMasuk ? 'Sudah dicatat pukul ' . \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i') : 'Catat kedatangan Anda' }}</span>
+                                            </span>
+                                        </span>
+                                    </label>
 
-                        <!-- STATUS LOKASI GPS -->
-                        <div id="kotak_lokasi" class="p-4 rounded-2xl border bg-slate-50 border-slate-200 text-xs flex items-start gap-3">
-                            <i id="ikon_lokasi" class="fa-solid fa-location-crosshairs text-slate-400 mt-0.5"></i>
-                            <div class="flex-1 w-full">
-                                <p id="teks_lokasi" class="font-semibold text-slate-600">Mencari lokasi Anda...</p>
-                                <div id="detail_lokasi" class="text-[11px] text-slate-500 mt-1 w-full">
-                                    Izinkan akses lokasi pada browser. Lokasi diperlukan untuk presensi Hadir &amp; Pulang (radius {{ \App\Support\Geofence::format((int) config('sekolah.radius_meter')) }} dari sekolah).
+                                    <label class="cursor-pointer {{ (! $sudahMasuk || $sudahPulang) ? 'cursor-not-allowed opacity-60' : '' }}">
+                                        <input type="radio" name="aksi" value="pulang" class="peer hidden" {{ $defaultAksi === 'pulang' && $sudahMasuk && ! $sudahPulang ? 'checked' : '' }} {{ (! $sudahMasuk || $sudahPulang) ? 'disabled' : '' }}>
+                                        <span class="flex items-center gap-3 p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 transition peer-checked:border-blue-600 peer-checked:bg-blue-50">
+                                            <span class="w-11 h-11 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-lg"><i class="fa-solid fa-right-from-bracket"></i></span>
+                                            <span>
+                                                <span class="block text-sm font-bold text-slate-800">Presensi Pulang</span>
+                                                <span class="block text-[11px] text-slate-500">
+                                                    @if($sudahPulang) Sudah dicatat pukul {{ \Carbon\Carbon::parse($absensiHariIni->jam_keluar)->format('H:i') }}
+                                                    @elseif(! $sudahMasuk) Tersedia setelah presensi masuk
+                                                    @else Catat kepulangan Anda @endif
+                                                </span>
+                                            </span>
+                                        </span>
+                                    </label>
                                 </div>
+                                <p class="text-[11px] text-slate-500 mt-3">
+                                    <i class="fa-solid fa-circle-info text-sky-500 mr-1"></i>
+                                    Tidak masuk karena sakit atau dinas? Ajukan melalui menu
+                                    <a href="{{ route('guru.izin.index') }}" class="font-bold text-[#138A73] hover:underline">Pengajuan Izin</a>
+                                    (dengan bukti, menunggu persetujuan admin).
+                                </p>
                             </div>
-                            <button type="button" id="btn_ulang_lokasi" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 hover:bg-slate-100 transition whitespace-nowrap">
-                                <i class="fa-solid fa-rotate"></i> Perbarui
-                            </button>
-                        </div>
 
-                        <button type="submit" id="btn_kirim" class="w-full py-3.5 bg-[#24B9A1] hover:bg-[#1DA38D] text-white font-semibold rounded-2xl text-xs sm:text-sm shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
-                            Kirim Presensi
-                        </button>
+                            <!-- LOKASI -->
+                            <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-bold text-slate-900">Verifikasi Lokasi</h3>
+                                    <button type="button" id="btn_ulang_lokasi" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 transition">
+                                        <i class="fa-solid fa-rotate mr-1"></i> Perbarui Lokasi
+                                    </button>
+                                </div>
+
+                                <div id="kotak_lokasi" class="p-4 rounded-2xl border bg-slate-50 border-slate-200 text-xs flex items-start gap-3">
+                                    <i id="ikon_lokasi" class="fa-solid fa-location-crosshairs text-slate-400 text-lg mt-0.5"></i>
+                                    <div class="flex-1">
+                                        <p id="teks_lokasi" class="font-bold text-slate-600 text-sm">Mencari lokasi Anda...</p>
+                                        <p id="detail_lokasi" class="text-[11px] text-slate-500 mt-1 leading-relaxed">Izinkan akses lokasi pada browser. Presensi hanya dapat dilakukan dalam radius {{ $radiusTeks }} dari sekolah.</p>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-3 gap-3 mt-4 text-center text-xs">
+                                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                        <p class="text-[10px] uppercase tracking-wide font-bold text-slate-400">Jarak Anda</p>
+                                        <p id="t_jarak" class="text-base sm:text-lg font-extrabold text-slate-800 mt-1">-</p>
+                                    </div>
+                                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                        <p class="text-[10px] uppercase tracking-wide font-bold text-slate-400">Batas Radius</p>
+                                        <p class="text-base sm:text-lg font-extrabold text-slate-800 mt-1">{{ $radiusTeks }}</p>
+                                    </div>
+                                    <div id="t_kurang_box" class="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                                        <p id="t_kurang_label" class="text-[10px] uppercase tracking-wide font-bold text-slate-400">Selisih</p>
+                                        <p id="t_kurang" class="text-base sm:text-lg font-extrabold text-slate-800 mt-1">-</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4">
+                                    <div class="flex justify-between text-[10px] font-semibold text-slate-400 mb-1">
+                                        <span>Posisi Anda</span><span>Titik sekolah</span>
+                                    </div>
+                                    <div class="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+                                        <div id="bar_jarak" class="h-full rounded-full bg-slate-300 transition-all duration-500" style="width: 0%"></div>
+                                    </div>
+                                </div>
+
+                                <p id="t_akurasi" class="mt-3 text-[11px] text-slate-500"></p>
+                            </div>
+
+                            <!-- CATATAN -->
+                            <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100">
+                                <label class="block text-sm font-bold text-slate-900 mb-2">Catatan <span class="font-normal text-slate-400 text-xs">(opsional)</span></label>
+                                <textarea name="keterangan" rows="2" placeholder="Mis. terlambat karena ..." class="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#24B9A1]"></textarea>
+                            </div>
+
+                            <button type="submit" id="btn_kirim" {{ $lengkap ? 'disabled' : '' }}
+                                    class="w-full py-4 bg-[#19A389] hover:bg-[#138A73] text-white font-bold rounded-2xl text-sm shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                @if($lengkap)
+                                    <i class="fa-solid fa-circle-check mr-1"></i> Presensi Hari Ini Sudah Lengkap
+                                @else
+                                    <i class="fa-solid fa-paper-plane mr-1"></i> <span id="label_kirim">Kirim Presensi</span>
+                                @endif
+                            </button>
+                        </fieldset>
                     </form>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Konfigurasi lokasi sekolah -->
+    <!-- Konfigurasi lokasi sekolah (dibaca oleh JavaScript di bawah) -->
     <div id="gps-config" class="hidden"
          data-lat="{{ config('sekolah.latitude') }}"
          data-lng="{{ config('sekolah.longitude') }}"
          data-radius="{{ (int) config('sekolah.radius_meter') }}"
          data-akurasi="{{ (int) config('sekolah.akurasi_maks_meter') }}"
-         data-wajib="{{ config('sekolah.gps_wajib') ? '1' : '0' }}"></div>
+         data-wajib="{{ config('sekolah.gps_wajib') ? '1' : '0' }}"
+         data-lengkap="{{ $lengkap ? '1' : '0' }}"></div>
 
     <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            if (sidebar) sidebar.classList.toggle('-translate-x-full');
+            if (overlay) overlay.classList.toggle('hidden');
+        }
+
         // ===== JAM OTOMATIS =====
-        setInterval(() => {
-            const now = new Date();
-            document.getElementById('waktu_otomatis').value = now.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB';
-        }, 1000);
+        function tickJam() {
+            document.getElementById('waktu_otomatis').textContent =
+                new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour12: false }).replace(/\./g, ':');
+        }
+        tickJam();
+        setInterval(tickJam, 1000);
 
         // ===== LOKASI GPS =====
+        // Pengecekan di sini hanya untuk kenyamanan pengguna.
+        // Validasi yang sebenarnya (dan tidak bisa dilewati) dilakukan di server.
         const cfg = document.getElementById('gps-config').dataset;
         const SEKOLAH = {
             lat: cfg.lat === '' ? null : parseFloat(cfg.lat),
@@ -172,6 +254,7 @@
             radius: parseInt(cfg.radius, 10),
             akurasi: parseInt(cfg.akurasi, 10),
             wajib: cfg.wajib === '1',
+            lengkap: cfg.lengkap === '1',
         };
 
         const form = document.getElementById('form_presensi');
@@ -180,9 +263,16 @@
         const ikon = document.getElementById('ikon_lokasi');
         const teks = document.getElementById('teks_lokasi');
         const detail = document.getElementById('detail_lokasi');
+        const tJarak = document.getElementById('t_jarak');
+        const tKurang = document.getElementById('t_kurang');
+        const tKurangLabel = document.getElementById('t_kurang_label');
+        const tKurangBox = document.getElementById('t_kurang_box');
+        const tAkurasi = document.getElementById('t_akurasi');
+        const bar = document.getElementById('bar_jarak');
         let lokasiOk = false;
         let watchId = null;
 
+        // 85 -> "85 m", 1250 -> "1,25 km"
         function fmtJarak(m) {
             if (m < 1000) return m + ' m';
             return (m / 1000).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + ' km';
@@ -195,31 +285,27 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
 
-        function perluLokasi() {
-            const pulang = form.querySelector('input[name="jenis_presensi"]:checked');
-            const status = form.querySelector('input[name="status"]:checked');
-            return !!pulang || (status ? status.value === 'Hadir' : true);
-        }
+        const TEMA = {
+            abu:    { kotak: 'bg-slate-50 border-slate-200',    ikon: 'text-slate-400',   judul: 'text-slate-600',   bar: 'bg-slate-300',   box: 'bg-slate-50 border-slate-200' },
+            hijau:  { kotak: 'bg-emerald-50 border-emerald-200', ikon: 'text-emerald-600', judul: 'text-emerald-800', bar: 'bg-emerald-500', box: 'bg-emerald-50 border-emerald-200' },
+            kuning: { kotak: 'bg-amber-50 border-amber-200',     ikon: 'text-amber-600',   judul: 'text-amber-800',   bar: 'bg-amber-400',   box: 'bg-amber-50 border-amber-200' },
+            merah:  { kotak: 'bg-rose-50 border-rose-200',       ikon: 'text-rose-600',    judul: 'text-rose-800',    bar: 'bg-rose-500',    box: 'bg-rose-50 border-rose-200' },
+        };
 
-        function tampil(warna, kelasIkon, judul, ketHTML) {
-            const tema = {
-                abu:   ['bg-slate-50 border-slate-200', 'text-slate-400', 'text-slate-600'],
-                hijau: ['bg-emerald-50 border-emerald-200', 'text-emerald-600', 'text-emerald-700'],
-                merah: ['bg-rose-50 border-rose-200', 'text-rose-600', 'text-rose-700'],
-            }[warna];
-            kotak.className = 'p-4 rounded-2xl border flex items-start gap-3 w-full ' + tema[0];
-            ikon.className = 'fa-solid ' + kelasIkon + ' mt-0.5 ' + tema[1];
-            teks.className = 'font-semibold text-sm ' + tema[2];
+        function tampil(warna, kelasIkon, judul, ket) {
+            const t = TEMA[warna];
+            kotak.className = 'p-4 rounded-2xl border text-xs flex items-start gap-3 ' + t.kotak;
+            ikon.className = 'fa-solid ' + kelasIkon + ' text-lg mt-0.5 ' + t.ikon;
+            teks.className = 'font-bold text-sm ' + t.judul;
             teks.textContent = judul;
-            detail.innerHTML = ketHTML;
+            detail.textContent = ket;
+            bar.className = 'h-full rounded-full transition-all duration-500 ' + t.bar;
+            tKurangBox.className = 'p-3 rounded-2xl border ' + t.box;
         }
 
         function perbaruiTombol() {
-            if (!SEKOLAH.wajib || !perluLokasi()) {
-                btnKirim.disabled = false;
-                return;
-            }
-            btnKirim.disabled = !lokasiOk;
+            if (SEKOLAH.lengkap) { btnKirim.disabled = true; return; }
+            btnKirim.disabled = SEKOLAH.wajib ? !lokasiOk : false;
         }
 
         function terimaPosisi(pos) {
@@ -237,70 +323,59 @@
 
             const jarak = Math.round(hitungJarak(SEKOLAH.lat, SEKOLAH.lng, latitude, longitude));
             const akurasi = Math.round(accuracy);
-            const infoKoordinat = `(Posisi terdeteksi: ${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+            const dalamRadius = jarak <= SEKOLAH.radius;
+            const akurasiBaik = accuracy <= SEKOLAH.akurasi;
+            const kurang = jarak - SEKOLAH.radius;
 
-            if (accuracy > SEKOLAH.akurasi) {
+            // Angka ringkas
+            tJarak.textContent = fmtJarak(jarak);
+            if (dalamRadius) {
+                tKurangLabel.textContent = 'Status';
+                tKurang.textContent = 'Di dalam radius';
+            } else {
+                tKurangLabel.textContent = 'Kurang';
+                tKurang.textContent = fmtJarak(kurang);
+            }
+
+            // Bar: penuh bila sudah di dalam radius, makin pendek bila makin jauh
+            const persen = dalamRadius ? 100 : Math.max(4, Math.min(96, (SEKOLAH.radius / jarak) * 100));
+            bar.style.width = persen + '%';
+
+            const koordinat = 'Koordinat terdeteksi: ' + latitude.toFixed(5) + ', ' + longitude.toFixed(5) + '.';
+
+            tAkurasi.innerHTML = '';
+            const barisAkurasi = document.createElement('span');
+            barisAkurasi.className = akurasiBaik ? 'text-slate-500' : 'text-rose-600 font-semibold';
+            barisAkurasi.textContent = 'Akurasi GPS ±' + akurasi + ' m (maksimal ' + SEKOLAH.akurasi + ' m)'
+                + (akurasiBaik ? '. ' : ' - terlalu rendah. Gunakan HP dengan GPS aktif di area terbuka, lalu tekan Perbarui Lokasi. ')
+                + koordinat;
+            tAkurasi.appendChild(barisAkurasi);
+
+            if (!dalamRadius) {
                 lokasiOk = false;
-                tampil('merah', 'fa-signal', `Akurasi GPS Terlalu Rendah (±${akurasi} m)`, `
-                    <div class="mt-2 space-y-1 bg-white/60 p-2.5 rounded-lg border border-rose-200 text-slate-700 w-full">
-                        <div class="flex justify-between items-center">
-                            <span>Perkiraan Jarak Anda:</span>
-                            <span class="font-bold text-rose-600">±${fmtJarak(jarak)}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span>Batas Akurasi Diterima:</span>
-                            <span class="font-bold text-emerald-600">Maksimal ${SEKOLAH.akurasi} m</span>
-                        </div>
-                    </div>
-                    <p class="mt-2 leading-relaxed">Perangkat tanpa chip GPS (seperti laptop/PC) biasanya memiliki akurasi yang rendah. Silakan gunakan HP dengan fitur GPS aktif di area terbuka, lalu tekan tombol <b>Perbarui</b>.</p>
-                    <p class="mt-1 text-[10px] text-slate-400 italic">${infoKoordinat}</p>
-                `);
-            } else if (jarak > SEKOLAH.radius) {
+                tampil(kurang <= SEKOLAH.radius * 3 ? 'kuning' : 'merah', 'fa-location-dot',
+                    'Anda belum berada di area sekolah',
+                    'Anda berada ' + fmtJarak(jarak) + ' dari titik sekolah, sedangkan batas presensi ' + fmtJarak(SEKOLAH.radius) + '. '
+                    + 'Dekati sekolah sejauh ' + fmtJarak(kurang) + ' lagi agar masuk radius presensi.');
+            } else if (!akurasiBaik) {
                 lokasiOk = false;
-                const selisih = jarak - SEKOLAH.radius;
-                tampil('merah', 'fa-location-dot', 'Anda Berada di Luar Area Presensi', `
-                    <div class="mt-2 space-y-1 bg-white/60 p-2.5 rounded-lg border border-rose-200 text-slate-700 w-full">
-                        <div class="flex justify-between items-center">
-                            <span>Jarak Anda Saat Ini:</span>
-                            <span class="font-bold text-rose-600">${fmtJarak(jarak)}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span>Batas Radius Maksimal:</span>
-                            <span class="font-bold text-emerald-600">${fmtJarak(SEKOLAH.radius)}</span>
-                        </div>
-                        <div class="mt-2 pt-2 border-t border-rose-200/70 font-semibold text-rose-600 text-center">
-                            Anda harus mendekati sekolah sejauh ${fmtJarak(selisih)} lagi.
-                        </div>
-                    </div>
-                    <p class="mt-2 leading-relaxed">Presensi status Hadir dan Pulang hanya dapat dilakukan jika Anda berada di dalam kawasan sekolah. (Status Izin/Sakit tidak dibatasi lokasi).</p>
-                    <p class="mt-1 text-[10px] text-slate-400 italic">${infoKoordinat}</p>
-                `);
+                tampil('kuning', 'fa-signal', 'Akurasi GPS belum memadai',
+                    'Posisi Anda ' + fmtJarak(jarak) + ' dari sekolah (di dalam radius), tetapi akurasi GPS ±' + akurasi + ' m melebihi batas ' + SEKOLAH.akurasi + ' m. Tunggu sinyal membaik atau tekan Perbarui Lokasi.');
             } else {
                 lokasiOk = true;
-                tampil('hijau', 'fa-circle-check', 'Lokasi Sesuai Kriteria Presensi', `
-                    <div class="mt-2 space-y-1 bg-white/60 p-2.5 rounded-lg border border-emerald-200 text-slate-700 w-full">
-                        <div class="flex justify-between items-center">
-                            <span>Jarak Anda Saat Ini:</span>
-                            <span class="font-bold text-emerald-700">${fmtJarak(jarak)}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span>Akurasi GPS:</span>
-                            <span class="font-bold text-emerald-700">±${akurasi} m</span>
-                        </div>
-                    </div>
-                    <p class="mt-2 leading-relaxed">Anda sudah berada di dalam jangkauan area sekolah dan dapat melakukan proses absensi.</p>
-                    <p class="mt-1 text-[10px] text-emerald-600/70 italic">${infoKoordinat}</p>
-                `);
+                tampil('hijau', 'fa-circle-check', 'Lokasi sesuai',
+                    'Anda berada ' + fmtJarak(jarak) + ' dari titik sekolah, di dalam radius presensi ' + fmtJarak(SEKOLAH.radius) + '. Silakan kirim presensi.');
             }
+
             perbaruiTombol();
         }
 
         function galatPosisi(err) {
             lokasiOk = false;
             const pesan = {
-                1: ['Akses lokasi ditolak', 'Izinkan akses lokasi untuk situs ini di pengaturan browser, lalu tekan Perbarui.'],
-                2: ['Lokasi tidak tersedia', 'Pastikan GPS/Location aktif di perangkat Anda, lalu tekan Perbarui.'],
-                3: ['Pencarian lokasi terlalu lama', 'Pindah ke area terbuka lalu tekan Perbarui.'],
+                1: ['Akses lokasi ditolak', 'Izinkan akses lokasi untuk situs ini di pengaturan browser, lalu tekan Perbarui Lokasi.'],
+                2: ['Lokasi tidak tersedia', 'Pastikan GPS/Location aktif di perangkat Anda, lalu tekan Perbarui Lokasi.'],
+                3: ['Pencarian lokasi terlalu lama', 'Pindah ke area terbuka lalu tekan Perbarui Lokasi.'],
             }[err.code] || ['Gagal mendapatkan lokasi', 'Coba lagi beberapa saat.'];
             tampil('merah', 'fa-location-pin-lock', pesan[0], pesan[1]);
             perbaruiTombol();
@@ -321,7 +396,26 @@
             });
         }
 
-        form.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', perbaruiTombol));
+        // Aksi (masuk / pulang) -> isi field yang dikirim ke server
+        form.addEventListener('submit', function () {
+            const aksi = form.querySelector('input[name="aksi"]:checked');
+            const status = document.getElementById('in_status');
+            const jenis = document.getElementById('in_jenis');
+            status.disabled = true;
+            jenis.disabled = true;
+            if (aksi && aksi.value === 'pulang') { jenis.disabled = false; }
+            else { status.disabled = false; }
+        });
+
+        form.querySelectorAll('input[name="aksi"]').forEach(function (r) {
+            r.addEventListener('change', function () {
+                const label = document.getElementById('label_kirim');
+                if (label) label.textContent = r.value === 'pulang' ? 'Kirim Presensi Pulang' : 'Kirim Presensi Masuk';
+            });
+        });
+        const aksiAwal = form.querySelector('input[name="aksi"]:checked');
+        if (aksiAwal) aksiAwal.dispatchEvent(new Event('change'));
+
         document.getElementById('btn_ulang_lokasi').addEventListener('click', mulaiLokasi);
         window.addEventListener('beforeunload', () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); });
         mulaiLokasi();

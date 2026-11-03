@@ -80,6 +80,18 @@
                             </a>
                         </li>
                         <li>
+                            <a href="{{ Route::has('admin.kenaikan.index') ? route('admin.kenaikan.index') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.kenaikan.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.kenaikan.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Kenaikan Kelas
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ Route::has('admin.izin.index') ? route('admin.izin.index') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.izin.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.izin.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Persetujuan Izin Guru
+                            </a>
+                        </li>
+                        <li>
                             <a href="{{ Route::has('admin.siswa.index') ? route('admin.siswa.index') : '#' }}" 
                                class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.siswa.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
                                 <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.siswa.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Data Siswa
@@ -99,6 +111,12 @@
                             <a href="{{ Route::has('admin.absen') ? route('admin.absen') : '#' }}" 
                                class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.absen*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
                                 <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.absen*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Rekap Absensi Guru
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ Route::has('admin.rekap-utama') ? route('admin.rekap-utama') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('admin.rekap-utama') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('admin.rekap-utama') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Rekap Absensi Utama
                             </a>
                         </li>
                     </ul>
@@ -148,6 +166,12 @@
                                 <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('guru.absen') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Presensi Saya
                             </a>
                         </li>
+                        <li>
+                            <a href="{{ Route::has('guru.izin.index') ? route('guru.izin.index') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('guru.izin.*') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('guru.izin.*') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Pengajuan Izin
+                            </a>
+                        </li>
                     </ul>
                 </div>
 
@@ -161,6 +185,12 @@
                             <a href="{{ Route::has('guru.rekap-siswa') ? route('guru.rekap-siswa') : '#' }}" 
                                class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('guru.rekap-siswa') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
                                 <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('guru.rekap-siswa') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Rekap Absen Siswa
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ Route::has('guru.rekap-utama') ? route('guru.rekap-utama') : '#' }}"
+                               class="hover:text-white flex items-center gap-2 px-4 py-2 transition-all rounded-l-full rounded-r-none {{ request()->routeIs('guru.rekap-utama') ? 'bg-white text-[#138A73] font-bold shadow' : 'hover:bg-white/10 rounded-r-lg' }}">
+                                <span class="w-1.5 h-1.5 rounded-full {{ request()->routeIs('guru.rekap-utama') ? 'bg-[#138A73]' : 'bg-white/80' }}"></span> Rekap Absensi Utama
                             </a>
                         </li>
                     </ul>

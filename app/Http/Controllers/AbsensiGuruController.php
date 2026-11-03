@@ -141,7 +141,8 @@ class AbsensiGuruController extends Controller
 
 
         $request->validate([
-            'status' => 'nullable|in:Hadir,Izin,Sakit',
+            // Izin/Sakit/Dinas diajukan lewat menu Pengajuan Izin (butuh bukti & persetujuan admin)
+            'status' => 'nullable|in:Hadir',
 
             'jenis_presensi' => 'nullable|in:Pulang',
 
@@ -155,6 +156,18 @@ class AbsensiGuruController extends Controller
             'akurasi' => 'nullable|numeric|min:0',
         ]);
 
+
+        // Izin sudah disetujui admin -> presensi hari ini terkunci
+        $terkunciIzin = AbsensiGuru::where('user_id', $user->id)
+            ->where('tanggal', $today)
+            ->where('terkunci', true)
+            ->first();
+
+        if ($terkunciIzin) {
+            return redirect()
+                ->back()
+                ->with('error', 'Presensi hari ini terkunci karena izin ' . $terkunciIzin->status . ' Anda sudah disetujui admin.');
+        }
 
         // ========================================================
         // CEK LOKASI GPS (Hadir & Pulang wajib di dalam radius sekolah)
@@ -214,6 +227,13 @@ class AbsensiGuruController extends Controller
         // ========================================================
 
         if ($request->jenis_presensi === 'Pulang') {
+
+            if (! $absensi->exists || ! $absensi->jam_masuk) {
+
+                return redirect()
+                    ->back()
+                    ->with('error', 'Lakukan presensi masuk terlebih dahulu sebelum presensi pulang.');
+            }
 
             if ($absensi->jam_keluar) {
 
@@ -423,7 +443,8 @@ class AbsensiGuruController extends Controller
         $guru          = AbsenSiswaService::guruDari($user);
         $jadwalHariIni = AbsenSiswaService::jadwalHariIni($user, $now);
         $libur         = AbsenSiswaService::hariLibur($now);
+        $utamaHariIni  = AbsenSiswaService::utamaHariIni($user, $now);
 
-        return view('guru.dashboard', compact('guru', 'jadwalHariIni', 'libur', 'now'));
+        return view('guru.dashboard', compact('guru', 'jadwalHariIni', 'libur', 'now', 'utamaHariIni'));
     }
 }

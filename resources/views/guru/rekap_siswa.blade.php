@@ -11,14 +11,34 @@
 </head>
 <body class="bg-[#EAF0F6] font-sans antialiased overflow-x-hidden">
 @php
-    $warnaHuruf = [
-        'H' => 'text-green-600',
-        'I' => 'text-amber-500',
-        'S' => 'text-red-600',
-        'A' => 'text-fuchsia-700',
-    ];
     $fmtPersen = fn ($p) => $p === null ? '-' : rtrim(rtrim(number_format($p, 1, '.', ''), '0'), '.') . '%';
     $adaFilter = $terpilih !== null;
+
+    $bulanPendek = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    $hurufHari   = ['Sn','Sl','Rb','Km','Jm','Sb','Mg']; // Sen Sel Rab Kam Jum Sab Min
+
+    // Gaya sel ala Excel: huruf saja dengan warna latar lembut
+    $gayaHuruf = [
+        'H' => 'bg-emerald-100 text-emerald-700',
+        'I' => 'bg-sky-100 text-sky-700',
+        'S' => 'bg-amber-100 text-amber-700',
+        'A' => 'bg-rose-100 text-rose-700',
+    ];
+
+    $bulanGrup = $kolom->groupBy(fn ($k) => $k->carbon->format('Y-m'));
+    $kolomTetap = $semua ? 4 : 3;
+
+    // Detail tiap tanggal untuk modal (mode satu kelas)
+    $detailKolom = $semua ? [] : $kolom->mapWithKeys(fn ($k) => [$k->tanggal => [
+        'tampil'     => Absen::namaHari($k->carbon) . ', ' . $k->carbon->format('d/m/Y'),
+        'tglPendek'  => $k->carbon->format('d/m/Y'),
+        'state'      => $k->state,
+        'keterangan' => $k->keterangan,
+        'urlSusulan' => ($k->susulan && $k->susulan['boleh'])
+            ? route('guru.absen-siswa.susulan', [$k->susulan['jadwal_id'], $k->tanggal, 'kelas_mapel' => $terpilih['key'], 'periode' => $periodeId, 'dari' => $dari, 'sampai' => $sampai])
+            : null,
+        'penanggung' => $k->susulan ? ['nama' => $k->susulan['nama'], 'pengganti' => $k->susulan['pengganti']] : null,
+    ]])->all();
 @endphp
 
     <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 z-40 hidden lg:hidden backdrop-blur-sm transition-opacity"></div>
@@ -38,19 +58,22 @@
 
             <div class="px-4 sm:px-8 pb-8 space-y-5">
 
-                <div>
-                    <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight uppercase">Rekap Absensi Siswa</h2>
-                    @if($adaFilter)
-                        <p class="text-sm font-bold text-slate-800 mt-1">
-                            @if($semua)
-                                Seluruh Kelas yang Diajar <span class="text-slate-400 mx-1">|</span>
-                            @else
-                                Kelas {{ $terpilih['kelas'] }} <span class="text-slate-400 mx-1">|</span>
-                                Mata Pelajaran: {{ $terpilih['mapel'] }} <span class="text-slate-400 mx-1">|</span>
-                            @endif
-                            Guru Pengampu: {{ $guru->nama ?? Auth::user()->name }}
-                        </p>
-                    @endif
+                <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight uppercase">Rekap Absensi Siswa</h2>
+                        @if($adaFilter)
+                            <p class="text-sm font-bold text-slate-800 mt-1">
+                                @if($semua)
+                                    Seluruh Kelas yang Diajar <span class="text-slate-400 mx-1">|</span>
+                                @else
+                                    Kelas {{ $terpilih['kelas'] }} <span class="text-slate-400 mx-1">|</span>
+                                    Mata Pelajaran: {{ $terpilih['mapel'] }} <span class="text-slate-400 mx-1">|</span>
+                                @endif
+                                Guru Pengampu: {{ $guru->nama ?? Auth::user()->name }}
+                            </p>
+                        @endif
+                    </div>
+
                 </div>
 
                 <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100 space-y-5">
@@ -91,12 +114,12 @@
                         </div>
 
                         <div class="md:col-span-4">
-                            <label class="block font-semibold text-slate-600 mb-1">Rentang Tanggal</label>
+                            <label class="block font-semibold text-slate-600 mb-1">Rentang Tanggal @if($tahunAktif)<span class="font-normal text-slate-400">(TP {{ $tahunAktif->nama }})</span>@endif</label>
                             <div class="flex items-center gap-2">
-                                <input type="date" name="dari" id="inputDari" value="{{ $dari }}"
+                                <input type="date" name="dari" id="inputDari" value="{{ $dari }}" @if($tahunAktif) min="{{ $tahunAktif->tanggal_mulai->toDateString() }}" max="{{ $tahunAktif->tanggal_selesai->toDateString() }}" @endif
                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#19A389]">
                                 <span class="font-semibold text-slate-500">s.d.</span>
-                                <input type="date" name="sampai" id="inputSampai" value="{{ $sampai }}"
+                                <input type="date" name="sampai" id="inputSampai" value="{{ $sampai }}" @if($tahunAktif) min="{{ $tahunAktif->tanggal_mulai->toDateString() }}" max="{{ $tahunAktif->tanggal_selesai->toDateString() }}" @endif
                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#19A389]">
                             </div>
                         </div>
@@ -119,13 +142,13 @@
 
                         <!-- ============ PERINGATAN BELUM DIABSEN ============ -->
                         @if($belumCount > 0)
-                            <div class="p-4 bg-amber-100 border border-amber-200 text-amber-900 text-xs sm:text-sm font-semibold rounded-2xl flex items-start gap-3">
-                                <i class="fa-solid fa-triangle-exclamation text-amber-500 text-lg mt-0.5"></i>
-                                <span>Perhatian: Terdapat {{ $belumCount }} Jadwal Pertemuan yang Belum Diabsen (Kolom Kuning).
+                            <div class="p-3 bg-amber-100 border border-amber-200 text-amber-900 text-xs font-semibold rounded-xl flex items-start gap-3">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-500 text-base mt-0.5"></i>
+                                <span>Perhatian: Terdapat {{ $belumCount }} jadwal pertemuan yang belum diabsen (kolom kuning, tanda "?").
                                     @if($semua)
-                                        Pilih satu kelas pada filter untuk melihat guru pengabsen dan melakukan absen susulan.
+                                        Untuk absen susulan, pilih satu kelas pada filter lalu klik tanggal yang berwarna kuning.
                                     @else
-                                        Absen susulan hanya dapat diisi oleh guru yang bersangkutan (guru pengganti bila ada) agar kalkulasi % Kehadiran akurat.
+                                        Klik tanggal berwarna kuning untuk absen susulan. Hanya guru yang bersangkutan (guru pengganti bila ada) yang dapat mengisi.
                                     @endif
                                 </span>
                             </div>
@@ -142,127 +165,85 @@
                                 Tidak ada hari libur nasional pada rentang ini.
                             @endif
                             @unless($semua)
-                                Hari efektif pada rentang ini: <b>{{ $efektif }}</b> pertemuan.
+                                Hari efektif: <b>{{ $efektif }}</b> pertemuan.
                             @endunless
                         </div>
 
-                        @php
-                            $bulanPendek = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-                            $hariPendek  = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
-                            $chip = function ($h) {
-                                $w = match($h) {
-                                    'H' => 'bg-emerald-500 text-white',
-                                    'I' => 'bg-sky-500 text-white',
-                                    'S' => 'bg-amber-400 text-slate-900',
-                                    'A' => 'bg-rose-500 text-white',
-                                    default => 'bg-slate-200 text-slate-500',
-                                };
-                                return '<span class="inline-flex w-6 h-6 items-center justify-center rounded-md text-[11px] font-bold ' . $w . '">' . e($h) . '</span>';
-                            };
-                            $kolomTetap = $semua ? 4 : 3;
-                        @endphp
-
-                        <!-- ============ MATRIKS REKAP ============ -->
-                        <div class="overflow-x-auto rounded-2xl border border-slate-100">
-                            <table class="w-full text-center text-xs border-collapse">
-                                <thead class="font-bold">
-                                    <tr class="bg-[#0f7a63] text-white">
-                                        <th rowspan="2" class="p-3 w-10">No</th>
-                                        <th rowspan="2" class="p-3 text-left">NISN</th>
-                                        <th rowspan="2" class="p-3 text-left min-w-[10rem]">Nama Siswa</th>
+                        <!-- ============ MATRIKS REKAP (ringkas ala Excel) ============ -->
+                        <div class="overflow-x-auto rounded-xl border border-slate-400">
+                            <table class="min-w-full text-center text-[11px] border-separate border-spacing-0">
+                                <thead class="font-bold text-white">
+                                    {{-- Baris 1: nama bulan (digabung) --}}
+                                    <tr class="bg-[#0f7a63]">
+                                        <th rowspan="3" class="sticky left-0 z-20 bg-[#0f7a63] px-1 w-9 min-w-[2.25rem] border-b border-r border-slate-400">No</th>
+                                        <th rowspan="3" class="sticky left-9 z-20 bg-[#0f7a63] px-2 text-left min-w-[8.5rem] border-b border-r border-slate-400">Nama Siswa</th>
+                                        <th rowspan="3" class="px-2 text-left border-b border-r border-slate-400">NISN</th>
                                         @if($semua)
-                                            <th rowspan="2" class="p-3 text-left">Kelas</th>
+                                            <th rowspan="3" class="px-2 text-left border-b border-r border-slate-400">Kelas</th>
                                         @endif
 
-                                        @foreach($kolom as $k)
-                                            @php
-                                                $hp = $hariPendek[$k->carbon->dayOfWeekIso - 1];
-                                                $bp = $bulanPendek[$k->carbon->month - 1];
-                                            @endphp
-
-                                            @if($semua)
-                                                {{-- Mode semua kelas: header ringkas, tanpa info pengabsen --}}
-                                                @php
-                                                    $bgHead = match($k->state) {
-                                                        'belum' => 'bg-yellow-300 text-slate-900',
-                                                        'libur' => 'bg-rose-400 text-white',
-                                                        default => 'bg-[#0f7a63] text-white',
-                                                    };
-                                                @endphp
-                                                <th rowspan="2" class="p-1.5 min-w-[2.8rem] {{ $bgHead }} align-top"
-                                                    title="{{ $k->state === 'libur' ? 'Libur: ' . $k->keterangan : ($k->state === 'belum' ? 'Ada kelas yang belum diabsen' : '') }}">
-                                                    <div class="text-[12px] leading-tight">{{ $k->carbon->format('d') }}</div>
-                                                    <div class="text-[9px] font-semibold leading-tight">{{ $bp }}</div>
-                                                    <div class="text-[9px] font-medium leading-tight">({{ $hp }})</div>
-                                                </th>
-
-                                            @elseif($k->state === 'sudah')
-                                                <th rowspan="2" class="p-2 min-w-[9.5rem] bg-teal-100 text-slate-800 align-top">
-                                                    <div class="bg-[#0f7a63] text-white rounded-lg p-2 leading-tight">{{ Absen::namaHari($k->carbon) }},<br>{{ $k->carbon->format('d/m/Y') }}</div>
-                                                    <div class="text-[10px] font-semibold text-slate-600 mt-2">Diabsen oleh:</div>
-                                                    <div class="text-[11px] font-bold">{{ $k->guru }}{{ $k->pengganti ? ' (Ganti)' : '' }}</div>
-                                                    <button type="button"
-                                                            data-tanggal="{{ $k->tanggal }}"
-                                                            data-tampil="{{ $k->carbon->format('d/m/Y') }}"
-                                                            class="btn-hapus-hari mt-1.5 px-2 py-1 text-rose-700 hover:bg-rose-100 rounded-md text-[10px] font-bold inline-flex items-center gap-1">
-                                                        <i class="fa-solid fa-trash"></i> Hapus Harian
-                                                    </button>
-                                                </th>
-
-                                            @elseif($k->state === 'belum')
-                                                <th rowspan="2" class="p-2 min-w-[9rem] bg-yellow-300 text-slate-900 align-top">
-                                                    <div class="leading-tight">{{ Absen::namaHari($k->carbon) }},<br>{{ $k->carbon->format('d/m/Y') }}</div>
-                                                    <div class="mt-2 text-rose-700 font-extrabold uppercase leading-tight">
-                                                        <i class="fa-solid fa-triangle-exclamation"></i> Belum<br>Diabsen
-                                                    </div>
-                                                    @if($k->susulan && $k->susulan['boleh'])
-                                                        <a href="{{ route('guru.absen-siswa.susulan', [$k->susulan['jadwal_id'], $k->tanggal, 'kelas_mapel' => $terpilih['key'], 'periode' => $periodeId, 'dari' => $dari, 'sampai' => $sampai]) }}"
-                                                           class="mt-2 inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#19A389] hover:bg-[#138A73] text-white rounded-lg text-[10px] font-bold normal-case">
-                                                            <i class="fa-solid fa-pen-to-square"></i> Absen Susulan
-                                                        </a>
-                                                    @elseif($k->susulan)
-                                                        <div class="mt-2 inline-flex items-start gap-1 px-2 py-1 bg-slate-800 text-white rounded-lg text-[10px] font-semibold normal-case leading-tight">
-                                                            <i class="fa-solid fa-lock mt-0.5"></i>
-                                                            <span>Hanya {{ $k->susulan['pengganti'] ? 'Guru Pengganti' : 'Guru' }}<br>({{ $k->susulan['nama'] }})</span>
-                                                        </div>
-                                                    @endif
-                                                </th>
-
-                                            @elseif($k->state === 'libur')
-                                                <th rowspan="2" class="p-2 min-w-[8rem] bg-rose-400 text-white align-top">
-                                                    <div class="leading-tight">{{ Absen::namaHari($k->carbon) }},<br>{{ $k->carbon->format('d/m/Y') }}</div>
-                                                    <div class="mt-3 leading-tight">LIBUR{{ $k->keterangan ? ' (' . $k->keterangan . ')' : '' }}</div>
-                                                </th>
-
-                                            @else
-                                                <th rowspan="2" class="p-2 min-w-[8rem] bg-[#0f7a63] text-white align-top">
-                                                    <div class="leading-tight">{{ Absen::namaHari($k->carbon) }},<br>{{ $k->carbon->format('d/m/Y') }}</div>
-                                                    <div class="mt-3 text-[11px] font-semibold text-emerald-100">({{ $k->state === 'hariini' ? 'Hari Ini' : 'Masa Depan' }})</div>
-                                                </th>
-                                            @endif
+                                        @foreach($bulanGrup as $ym => $grup)
+                                            @php $first = $grup->first()->carbon; @endphp
+                                            <th colspan="{{ $grup->count() }}" class="px-1 py-1 border-b border-r border-slate-400">
+                                                {{ $bulanPendek[$first->month - 1] }} {{ $first->year }}
+                                            </th>
                                         @endforeach
 
-                                        <th colspan="4" class="p-2 border-l border-white/20">Total</th>
-                                        <th rowspan="2" class="p-3 border-l border-white/20">% Kehadiran</th>
+                                        <th colspan="4" class="px-1 py-1 border-b border-r border-slate-400">Total</th>
+                                        <th rowspan="3" class="px-2 border-b border-slate-400">%<br>Hadir</th>
                                     </tr>
-                                    <tr class="bg-[#0f7a63] text-white">
-                                        <th class="p-2 border-l border-white/20">H</th>
-                                        <th class="p-2">I</th>
-                                        <th class="p-2">S</th>
-                                        <th class="p-2">A</th>
+
+                                    {{-- Baris 2: tanggal (klik di mode satu kelas) + H I S A --}}
+                                    <tr class="bg-[#0f7a63]">
+                                        @foreach($kolom as $k)
+                                            @php
+                                                $bgHead = match($k->state) {
+                                                    'belum' => 'bg-yellow-300 text-slate-900',
+                                                    'libur' => 'bg-rose-400 text-white',
+                                                    default => 'bg-[#0f7a63] text-white',
+                                                };
+                                            @endphp
+                                            <th class="p-0 w-7 min-w-[1.75rem] border-b border-r border-slate-400 {{ $bgHead }}"
+                                                title="{{ $k->carbon->format('d/m/Y') }}{{ $k->state === 'libur' ? ' - Libur: ' . $k->keterangan : '' }}{{ $k->state === 'belum' ? ' - Belum diabsen' : '' }}">
+                                                @if($semua)
+                                                    <div class="py-1">{{ $k->carbon->format('d') }}</div>
+                                                @else
+                                                    <button type="button" class="btn-kolom w-full py-1 hover:brightness-90" data-tanggal="{{ $k->tanggal }}">{{ $k->carbon->format('d') }}</button>
+                                                @endif
+                                            </th>
+                                        @endforeach
+
+                                        <th rowspan="2" class="w-7 px-1 border-b border-r border-slate-400">H</th>
+                                        <th rowspan="2" class="w-7 px-1 border-b border-r border-slate-400">I</th>
+                                        <th rowspan="2" class="w-7 px-1 border-b border-r border-slate-400">S</th>
+                                        <th rowspan="2" class="w-7 px-1 border-b border-r border-slate-400">A</th>
+                                    </tr>
+
+                                    {{-- Baris 3: inisial hari --}}
+                                    <tr class="bg-[#0f7a63]">
+                                        @foreach($kolom as $k)
+                                            @php
+                                                $bgHead = match($k->state) {
+                                                    'belum' => 'bg-yellow-300 text-slate-700',
+                                                    'libur' => 'bg-rose-400 text-white',
+                                                    default => 'bg-[#0f7a63] text-emerald-100',
+                                                };
+                                            @endphp
+                                            <th class="p-0 py-0.5 text-[9px] font-semibold border-b border-r border-slate-400 {{ $bgHead }}">{{ $hurufHari[$k->carbon->dayOfWeekIso - 1] }}</th>
+                                        @endforeach
                                     </tr>
                                 </thead>
 
-                                <tbody class="divide-y divide-slate-100 text-slate-700">
+                                <tbody class="text-slate-700">
                                     @forelse($rekap as $i => $r)
-                                        <tr class="hover:bg-slate-50/70">
-                                            <td class="p-2.5 font-semibold">{{ $i + 1 }}</td>
-                                            <td class="p-2.5 text-left text-slate-500">{{ $r->nisn ?? '-' }}</td>
-                                            <td class="p-2.5 text-left font-bold text-slate-800 whitespace-nowrap">{{ $r->nama }}</td>
+                                        <tr class="group">
+                                            <td class="sticky left-0 z-10 bg-white group-hover:bg-slate-50 px-1 py-1 font-semibold border-b border-r border-slate-300">{{ $i + 1 }}</td>
+                                            <td class="sticky left-9 z-10 bg-white group-hover:bg-slate-50 px-2 py-1 text-left font-bold text-slate-800 whitespace-nowrap border-b border-r border-slate-300">{{ $r->nama }}</td>
+                                            <td class="px-2 py-1 text-left text-slate-500 border-b border-r border-slate-300">{{ $r->nisn ?? '-' }}</td>
                                             @if($semua)
-                                                <td class="p-2.5 text-left whitespace-nowrap">
+                                                <td class="px-2 py-1 text-left whitespace-nowrap border-b border-r border-slate-300">
                                                     <span class="font-semibold">{{ $r->kelas }}</span>
-                                                    @if($mapelBanyak)<span class="block text-[10px] text-slate-400">{{ $r->mapel }}</span>@endif
+                                                    @if($mapelBanyak)<span class="block text-[9px] text-slate-400">{{ $r->mapel }}</span>@endif
                                                 </td>
                                             @endif
 
@@ -273,21 +254,21 @@
                                                 @endphp
 
                                                 @if($stSel === 'libur')
-                                                    <td class="p-1.5 bg-rose-300 font-bold text-rose-900 text-[11px]">{{ $semua ? 'L' : 'LIBUR' }}</td>
+                                                    <td class="p-0 bg-rose-300 text-rose-900 font-bold border-b border-r border-slate-300">L</td>
                                                 @elseif($stSel === 'belum')
-                                                    <td class="p-1.5 bg-yellow-100 text-slate-400 font-bold">?</td>
-                                                @elseif($stSel === 'sudah')
-                                                    <td class="p-1.5">{!! $nilai ? $chip($nilai) : '<span class="text-slate-300">-</span>' !!}</td>
+                                                    <td class="p-0 bg-yellow-100 text-yellow-600 font-bold border-b border-r border-slate-300">?</td>
+                                                @elseif($stSel === 'sudah' && $nilai)
+                                                    <td class="p-0 font-bold border-b border-r border-slate-300 {{ $gayaHuruf[$nilai] ?? '' }}">{{ $nilai }}</td>
                                                 @else
-                                                    <td class="p-1.5 text-slate-300 font-bold">-</td>
+                                                    <td class="p-0 text-slate-300 border-b border-r border-slate-300">-</td>
                                                 @endif
                                             @endforeach
 
-                                            <td class="p-2.5 border-l border-slate-100 font-semibold">{{ $r->total['H'] }}</td>
-                                            <td class="p-2.5 font-semibold">{{ $r->total['I'] }}</td>
-                                            <td class="p-2.5 font-semibold">{{ $r->total['S'] }}</td>
-                                            <td class="p-2.5 font-semibold">{{ $r->total['A'] }}</td>
-                                            <td class="p-2.5 border-l border-slate-100 font-bold">{{ $fmtPersen($r->persen) }}</td>
+                                            <td class="px-1 py-1 font-semibold border-b border-r border-slate-300">{{ $r->total['H'] }}</td>
+                                            <td class="px-1 py-1 font-semibold border-b border-r border-slate-300">{{ $r->total['I'] }}</td>
+                                            <td class="px-1 py-1 font-semibold border-b border-r border-slate-300">{{ $r->total['S'] }}</td>
+                                            <td class="px-1 py-1 font-semibold border-b border-r border-slate-300">{{ $r->total['A'] }}</td>
+                                            <td class="px-2 py-1 font-bold border-b border-slate-300">{{ $fmtPersen($r->persen) }}</td>
                                         </tr>
                                     @empty
                                         <tr>
@@ -301,21 +282,17 @@
                         </div>
 
                         @if($kolom->isEmpty())
-                            <p class="text-xs text-slate-400 italic">Tidak ada jadwal pertemuan atau absen pada rentang tanggal ini.</p>
+                            <p class="text-xs text-slate-400 italic">Belum ada pertemuan yang tercatat atau terjadwal sampai hari ini pada rentang tanggal ini.</p>
                         @endif
 
-                        @if($semua)
-                            <p class="text-[11px] text-slate-600">
-                                Mode semua kelas hanya menampilkan rekap. "-" = kelas tidak ada pertemuan pada tanggal itu, "?" = belum diabsen, "L" = libur.
-                                Untuk melihat guru pengabsen, menghapus absen harian, atau absen susulan, pilih <b>satu kelas</b> pada filter.
-                                % = Hadir &divide; hari efektif kelas siswa tersebut (yang sudah diabsen) &times; 100%.
-                            </p>
-                        @else
-                            <p class="text-[11px] text-slate-600">
-                                *Untuk menghapus kesalahan input, gunakan tombol 'Hapus Harian' di bagian atas kolom tanggal bersangkutan (berlaku untuk seluruh siswa pada tanggal itu).
-                                Hari libur &amp; hari belum diabsen tidak dimasukkan dalam pembagi % Kehadiran siswa: % = Hadir &divide; hari efektif (yang sudah diabsen) &times; 100%.
-                            </p>
-                        @endif
+                        <p class="text-[11px] text-slate-600 leading-relaxed">
+                            <b>H</b> Hadir, <b>I</b> Izin, <b>S</b> Sakit, <b>A</b> Alpa, <b>?</b> belum diabsen, <b>L</b> libur, <b>-</b> tidak ada pertemuan.
+                            Inisial hari: Sn Senin, Sl Selasa, Rb Rabu, Km Kamis, Jm Jumat, Sb Sabtu, Mg Minggu.
+                            % Hadir = Hadir &divide; hari efektif (pertemuan yang sudah diabsen) &times; 100%; libur dan belum diabsen tidak dihitung.
+                            @unless($semua)
+                                Klik tanggal untuk hapus absen harian (seluruh siswa) atau absen susulan. Nama guru pengabsen ada di kartu kelas pada Dashboard.
+                            @endunless
+                        </p>
                     @endif
                 </div>
             </div>
@@ -323,6 +300,31 @@
     </div>
 
     @if($adaFilter && ! $semua)
+        <!-- MODAL DETAIL TANGGAL (tanggal terkunci / read-only) -->
+        <div id="modalTanggal" class="hidden fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-md">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-base font-extrabold text-slate-900 uppercase">Detail Pertemuan</h3>
+                    <button type="button" id="mtTutup" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Kelas &amp; Mapel</label>
+                        <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">Kelas {{ $terpilih['kelas'] }} - {{ $terpilih['mapel'] }}</div>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Tanggal</label>
+                        <div class="p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-800 flex justify-between items-center">
+                            <span id="mtTanggal"></span><i class="fa-solid fa-lock text-slate-400"></i>
+                        </div>
+                    </div>
+                    <div id="mtStatus" class="p-3 rounded-xl font-semibold"></div>
+                    <div id="mtAksi" class="flex flex-wrap gap-2 pt-1"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Form hapus per hari (seluruh siswa) -->
         <form id="formHapusHari" method="POST" action="{{ route('guru.rekap-siswa.hapus-hari') }}" class="hidden">
             @csrf
@@ -336,6 +338,8 @@
             <input type="hidden" name="sampai" value="{{ $sampai }}">
         </form>
     @endif
+
+    <div id="dataDetail" class="hidden" data-detail="{{ json_encode($detailKolom) }}"></div>
 
     @if(session('success') || session('error'))
         <div id="flashData" class="hidden"
@@ -363,9 +367,63 @@
             });
         }
 
-        document.querySelectorAll('.btn-hapus-hari').forEach(function (btn) {
-            btn.addEventListener('click', function () { hapusHari(btn.dataset.tanggal, btn.dataset.tampil); });
-        });
+        // ===== MODAL DETAIL TANGGAL (mode satu kelas) =====
+        const DETAIL = JSON.parse(document.getElementById('dataDetail').dataset.detail || '{}');
+        const modalTanggal = document.getElementById('modalTanggal');
+
+        function buatTombol(teks, kelas, aksi) {
+            const el = document.createElement(aksi.href ? 'a' : 'button');
+            el.className = 'px-4 py-2.5 rounded-xl font-bold text-xs transition ' + kelas;
+            el.textContent = teks;
+            if (aksi.href) { el.href = aksi.href; } else { el.type = 'button'; el.addEventListener('click', aksi.klik); }
+            return el;
+        }
+
+        if (modalTanggal) {
+            document.querySelectorAll('.btn-kolom').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    const d = DETAIL[btn.dataset.tanggal];
+                    if (!d) return;
+
+                    document.getElementById('mtTanggal').textContent = d.tampil;
+                    const status = document.getElementById('mtStatus');
+                    const aksi = document.getElementById('mtAksi');
+                    aksi.replaceChildren();
+
+                    if (d.state === 'sudah') {
+                        status.className = 'p-3 rounded-xl font-semibold bg-emerald-50 border border-emerald-200 text-emerald-900';
+                        status.textContent = 'Sudah diabsen.';
+                        aksi.append(buatTombol('Hapus Harian (seluruh siswa)', 'bg-rose-600 hover:bg-rose-700 text-white', {
+                            klik: function () { modalTanggal.classList.add('hidden'); hapusHari(btn.dataset.tanggal, d.tglPendek); }
+                        }));
+                    } else if (d.state === 'belum') {
+                        status.className = 'p-3 rounded-xl font-semibold bg-yellow-100 border border-yellow-300 text-yellow-900';
+                        status.textContent = 'Belum Diabsen.';
+                        if (d.urlSusulan) {
+                            aksi.append(buatTombol('Lanjut Absen Susulan', 'bg-[#19A389] hover:bg-[#138A73] text-white', { href: d.urlSusulan }));
+                        } else if (d.penanggung) {
+                            const info = document.createElement('div');
+                            info.className = 'w-full p-3 rounded-xl bg-slate-800 text-white font-semibold';
+                            info.textContent = d.penanggung.pengganti
+                                ? 'Terkunci: hanya Guru Pengganti (' + d.penanggung.nama + ') yang dapat mengabsen tanggal ini. Guru utama diblokir.'
+                                : 'Terkunci: hanya guru pengampu (' + d.penanggung.nama + ') yang dapat mengabsen tanggal ini.';
+                            aksi.append(info);
+                        }
+                    } else if (d.state === 'libur') {
+                        status.className = 'p-3 rounded-xl font-semibold bg-rose-50 border border-rose-200 text-rose-800';
+                        status.textContent = 'Libur' + (d.keterangan ? ': ' + d.keterangan : '') + '. Tidak dihitung sebagai hari efektif.';
+                    } else {
+                        status.className = 'p-3 rounded-xl font-semibold bg-slate-50 border border-slate-200 text-slate-600';
+                        status.textContent = 'Hari ini. Absen dilakukan dari kartu jadwal di Dashboard.';
+                    }
+
+                    modalTanggal.classList.remove('hidden');
+                });
+            });
+
+            document.getElementById('mtTutup').addEventListener('click', function () { modalTanggal.classList.add('hidden'); });
+            modalTanggal.addEventListener('click', function (e) { if (e.target === modalTanggal) modalTanggal.classList.add('hidden'); });
+        }
 
         // Hapus absen SATU HARI (seluruh siswa)
         function hapusHari(tanggalIso, tanggalTampil) {
@@ -377,7 +435,7 @@
                 showCancelButton: true,
                 confirmButtonColor: '#CE1B1B',
                 cancelButtonColor: '#64748b',
-                confirmButtonText: '<i class="fa-solid fa-trash mr-1"></i> Ya, Hapus Harian',
+                confirmButtonText: 'Ya, Hapus Harian',
                 cancelButtonText: 'Batal',
                 customClass: {
                     popup: 'rounded-3xl',

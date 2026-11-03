@@ -26,6 +26,8 @@ class AbsensiGuru extends Model
         'lat_keluar',
         'lng_keluar',
         'jarak_keluar',
+        'izin_id',
+        'terkunci',
     ];
 
     public function user()

@@ -36,6 +36,35 @@
                         </div>
                     @endif
 
+                    @if($terkunci ?? false)
+                        <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs rounded-xl flex items-center gap-2 font-semibold">
+                            <i class="fa-solid fa-lock text-emerald-600"></i>
+                            <span>Absensi Utama diselesaikan oleh: <b>{{ $selesaiOleh }}</b>. Form terkunci dan tidak dapat diubah.</span>
+                        </div>
+                    @elseif($utama ?? false)
+                        <div class="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xl">
+                            <i class="fa-solid fa-circle-info mr-1"></i>
+                            Absensi Utama hanya dilakukan <b>satu kali</b> per hari oleh guru jam ke-1; setelah disimpan, form terkunci.
+                            Absensi mata pelajaran tetap diisi masing-masing guru mapel.
+                        </div>
+                    @endif
+
+                    @if(! ($utama ?? false) && isset($utamaInfo))
+                        @if($utamaInfo['ada'])
+                            <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs rounded-xl flex items-start gap-2">
+                                <i class="fa-solid fa-school-circle-check text-emerald-600 mt-0.5"></i>
+                                <span>Absensi Utama (sekolah) kelas ini sudah diisi oleh <b>{{ $utamaInfo['oleh'] ?? '-' }}</b>.
+                                    Kolom <b>UTAMA</b> menunjukkan kehadiran siswa di jam ke-1 untuk dibandingkan dengan kehadiran di jam Anda.</span>
+                            </div>
+                        @else
+                            <div class="p-3 bg-amber-100 border border-amber-300 text-amber-900 text-xs rounded-xl flex items-start gap-2">
+                                <i class="fa-solid fa-bell text-amber-600 mt-0.5"></i>
+                                <span>Absensi Utama (sekolah) kelas ini <b>belum diisi</b>@if($utamaInfo['penanggung']) oleh guru jam ke-1 (<b>{{ $utamaInfo['penanggung'] }}</b>)@endif.
+                                    Mohon ingatkan agar data kehadiran sekolah lengkap.</span>
+                            </div>
+                        @endif
+                    @endif
+
                     @if($susulan)
                         <div class="p-3 bg-amber-100 border border-amber-300 text-amber-900 text-xs rounded-xl flex items-start gap-2">
                             <i class="fa-solid fa-clock-rotate-left text-amber-600 mt-0.5"></i>
@@ -47,20 +76,29 @@
                     <!-- INFORMASI SESI (otomatis dari jadwal, tanggal terkunci) -->
                     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 text-xs">
                         <div class="font-semibold text-slate-500 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <span class="text-[#19A389] font-bold">{{ $kartu->mapel }}</span>
-                            <span>•</span>
-                            <span class="font-bold text-slate-700">Kelas {{ $kartu->kelas }}</span>
-                            <span>•</span>
-                            <span>Pertemuan ke-{{ $pertemuan }}</span>
-                            <span>•</span>
-                            <span>{{ $kartu->jam_masuk }} - {{ $kartu->jam_selesai }} WIB</span>
-                            <span>•</span>
+                            @if($utama ?? false)
+                                <span class="text-indigo-600 font-bold">Absensi Utama (Jam Ke-1)</span>
+                                <span>•</span>
+                                <span class="font-bold text-slate-700">Kelas {{ $kartu->kelas }}</span>
+                                <span>•</span>
+                                <span>{{ $kartu->jam_masuk }} WIB</span>
+                                <span>•</span>
+                            @else
+                                <span class="text-[#19A389] font-bold">{{ $kartu->mapel }}</span>
+                                <span>•</span>
+                                <span class="font-bold text-slate-700">Kelas {{ $kartu->kelas }}</span>
+                                <span>•</span>
+                                <span>Pertemuan ke-{{ $pertemuan }}</span>
+                                <span>•</span>
+                                <span>{{ $kartu->jam_masuk }} - {{ $kartu->jam_selesai }} WIB</span>
+                                <span>•</span>
+                            @endif
                             <span title="Tanggal terkunci otomatis sesuai hari ini">
                                 <i class="fa-solid fa-lock text-[10px] text-slate-400 mr-0.5"></i>{{ \App\Services\AbsenSiswaService::namaHari($now) }}, {{ $now->format('d/m/Y') }}
                             </span>
                             @if($kartu->is_pengganti)
                                 <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 font-bold text-[10px]">
-                                    Guru Pengganti{{ $kartu->guru_asli ? ' (menggantikan ' . $kartu->guru_asli . ')' : '' }}
+                                    Guru Pengganti{{ ($kartu->guru_asli ?? null) ? ' (menggantikan ' . $kartu->guru_asli . ')' : '' }}
                                 </span>
                             @endif
                         </div>
@@ -86,6 +124,7 @@
                                         <th class="p-4 w-1/3">NAMA SISWA</th>
                                         <th class="p-4 w-1/6">KELAS</th>
                                         <th class="p-4 w-1/5">WAKTU</th>
+                                        @unless($utama ?? false)<th class="p-4 text-center" title="Kehadiran di Absensi Utama (jam ke-1)">UTAMA</th>@endunless
                                         <th class="p-4 text-center">STATUS KEHADIRAN</th>
                                     </tr>
                                 </thead>
@@ -95,12 +134,26 @@
                                         @php
                                             $siswaId =$s->id ?? ($index + 1);$namaSiswa = $s->nama ?? $s->name ?? '-';
                                             $kelasSiswa = $s->kelas ?? $kartu->kelas;
-                                            $statusSiswa = 'MASUK';
+                                            $statusSiswa = ($tersimpan ?? [])[$siswaId] ?? 'MASUK';
                                         @endphp
                                         <tr class="hover:bg-slate-50/80 transition row-siswa">
                                             <td class="p-4 font-bold text-slate-800 nama-cell">{{ $namaSiswa }}</td>
                                             <td class="p-4">{{ $kelasSiswa }}</td>
                                             <td class="p-4 text-slate-500">{{ date('d.m.Y H:i') }}</td>
+                                            @unless($utama ?? false)
+                                                @php
+                                                    $hu = ($utamaInfo['status'] ?? [])[$siswaId] ?? null;
+                                                    $gu = match($hu) {
+                                                        'H' => 'bg-emerald-500 text-white', 'I' => 'bg-sky-500 text-white',
+                                                        'S' => 'bg-amber-400 text-slate-900', 'A' => 'bg-rose-500 text-white',
+                                                        default => 'bg-slate-100 text-slate-400',
+                                                    };
+                                                @endphp
+                                                <td class="p-4 text-center">
+                                                    <span class="inline-flex w-6 h-6 items-center justify-center rounded-md text-[11px] font-bold {{ $gu }}"
+                                                          title="Absensi Utama: {{ $hu ?? 'belum diisi' }}">{{ $hu ?? '?' }}</span>
+                                                </td>
+                                            @endunless
                                             <td class="p-4">
                                                 <div class="flex items-center justify-center gap-2">
                                                     
@@ -114,7 +167,7 @@
                                                     </div>
 
                                                     <!-- TOMBOL PILIHAN STATUS -->
-                                                    <div class="flex items-center gap-1.5">
+                                                    <div class="flex items-center gap-1.5 {{ ($terkunci ?? false) ? 'pointer-events-none opacity-90' : '' }}">
                                                         <!-- HADIR (MASUK) -->
                                                         <button type="button" onclick="selectStatus('{{ $siswaId }}', 'MASUK')" id="btn-masuk-{{ $siswaId }}"
                                                                 class="px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-[#47CB23] text-white border-[#47CB23] shadow-sm">
@@ -145,7 +198,7 @@
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="4" class="p-8 text-center text-slate-400 italic">
+                                            <td colspan="5" class="p-8 text-center text-slate-400 italic">
                                                 Belum ada data siswa terdaftar di kelas ini.
                                             </td>
                                         </tr>
@@ -156,7 +209,7 @@
                         </div>
 
                         <!-- TOMBOL SELESAI ABSEN -->
-                        <div class="pt-6 flex justify-end">
+                        <div class="pt-6 flex justify-end {{ ($terkunci ?? false) ? 'hidden' : '' }}">
                             <button type="submit" 
                                     class="px-8 py-3 bg-[#19A389] hover:bg-[#138A73] text-white font-bold rounded-2xl shadow-lg transition flex items-center gap-2 text-xs">
                                 <i class="fa-solid fa-circle-check"></i> Selesai Absen
@@ -176,6 +229,13 @@
             sidebar.classList.toggle('-translate-x-full');
             overlay.classList.toggle('hidden');
         }
+
+        // Sesuaikan tampilan awal dengan status tiap siswa (mis. Absensi Utama yang sudah terkunci)
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('input[id^="input-status-"]').forEach(function (el) {
+                selectStatus(el.id.replace('input-status-', ''), el.value);
+            });
+        });
 
         // LOGIC UPDATE TAMPILAN STATUS (HADIR, SAKIT, IZIN, ABSEN)
         function selectStatus(siswaId, status) {
