@@ -37,7 +37,22 @@
                 <!-- Session Status Alerts -->
                 <x-auth-session-status class="mb-4" :status="session('status')" />
 
-                <form method="POST" action="{{ route('login') }}" class="space-y-5">
+                {{-- Kotak peringatan login gagal --}}
+                @if ($errors->any())
+                    <div role="alert" class="mb-5 flex items-start gap-3 p-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 shadow-sm"
+                         style="animation: loginAlert .25s ease-out">
+                        <span class="flex-none w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center">
+                            <i class="fa-solid fa-circle-exclamation"></i>
+                        </span>
+                        <div class="flex-1">
+                            <p class="text-sm font-bold">Login Gagal</p>
+                            <p class="text-xs mt-0.5 leading-relaxed">{{ $errors->first() }}</p>
+                        </div>
+                    </div>
+                    <style>@keyframes loginAlert{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}</style>
+                @endif
+
+                <form method="POST" action="{{ route('login') }}" class="space-y-5" novalidate>
                     @csrf
 
                     <!-- Username / Email Input -->
@@ -54,9 +69,8 @@
                                    required 
                                    autofocus 
                                    placeholder="masukan id" 
-                                   class="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition placeholder:text-slate-300 shadow-sm">
+                                   class="w-full pl-11 pr-4 py-3 bg-white border {{ $errors->has('email') ? 'border-rose-400' : 'border-slate-200' }} rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition placeholder:text-slate-300 shadow-sm">
                         </div>
-                        <x-input-error :messages="$errors->get('email')" class="mt-1 text-xs" />
                     </div>
 
                     <!-- Password Input -->
@@ -71,14 +85,13 @@
                                    name="password" 
                                    required 
                                    placeholder="password" 
-                                   class="w-full pl-11 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition placeholder:text-slate-300 shadow-sm">
+                                   class="w-full pl-11 pr-10 py-3 bg-white border {{ $errors->has('password') ? 'border-rose-400' : 'border-slate-200' }} rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition placeholder:text-slate-300 shadow-sm">
                             
                             <!-- Tombol Toggle Visibilitas Password -->
                             <button type="button" id="togglePassword" class="absolute inset-y-0 right-0 flex items-center pr-4 text-emerald-500 hover:text-emerald-700 focus:outline-none">
                                 <i class="fa-solid fa-eye-slash text-sm" id="eyeIcon"></i>
                             </button>
                         </div>
-                        <x-input-error :messages="$errors->get('password')" class="mt-1 text-xs" />
                     </div>
 
                     <!-- Lupa Password Link & Remember Me -->

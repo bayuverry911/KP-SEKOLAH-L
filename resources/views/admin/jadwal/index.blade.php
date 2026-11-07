@@ -491,5 +491,6 @@
             overlay.classList.toggle('hidden');
         }
     </script>
+@include('layouts.partials.ui')
 </body>
 </html>

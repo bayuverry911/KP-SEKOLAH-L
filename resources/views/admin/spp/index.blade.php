@@ -342,13 +342,18 @@
             // ===== HAPUS SPP (wajib alasan) =====
             document.querySelectorAll('.form-hapus-spp').forEach(f => {
                 f.addEventListener('submit', function (e) {
-                    const alasan = prompt('Hapus data SPP ' + f.dataset.no + '?\nTuliskan alasan penghapusan (minimal 5 karakter):');
-                    if (alasan === null || alasan.trim().length < 5) {
-                        e.preventDefault();
-                        if (alasan !== null) alert('Alasan penghapusan minimal 5 karakter.');
-                        return;
-                    }
-                    f.querySelector('[name=alasan]').value = alasan.trim();
+                    if (f.dataset.alasanOk === '1') return;
+                    e.preventDefault();
+                    uiPrompt({
+                        judul: 'Hapus Data SPP',
+                        pesan: 'Hapus data SPP ' + f.dataset.no + '? Tuliskan alasan penghapusan.',
+                        placeholder: 'Alasan penghapusan (minimal 5 karakter)',
+                        min: 5, ok: 'Hapus', varian: 'bad'
+                    }, function (alasan) {
+                        f.querySelector('[name=alasan]').value = alasan;
+                        f.dataset.alasanOk = '1';
+                        f.submit();
+                    });
                 });
             });
 

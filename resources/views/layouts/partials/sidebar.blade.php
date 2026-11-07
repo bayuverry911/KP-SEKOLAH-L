@@ -244,3 +244,5 @@
         @endif
     </div>
 </aside>
+
+@include('layouts.partials.ui')

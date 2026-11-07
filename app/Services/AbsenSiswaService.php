@@ -452,52 +452,80 @@ class AbsenSiswaService
             ->values();
     }
 
-    /** Rentang tanggal dari query (periode / manual); default bulan ini. */
+    /**
+     * Filter waktu rekap. Tiga mode terpisah:
+     *  - bulan   : satu bulan penuh (input month) - default, bulan ini
+     *  - tanggal : satu tanggal tunggal
+     *  - rentang : periode pembelajaran / rentang tanggal manual
+     */
     public static function rentang(Request $request): array
     {
         $periodeList = PeriodePembelajaran::orderBy('tanggal_mulai')->get();
         $periodeId   = $request->query('periode');
         $periode     = $periodeId ? $periodeList->firstWhere('id', (int) $periodeId) : null;
+        $now         = self::sekarang();
 
-        $parse = function ($nilai) {
+        $parse = function ($nilai, string $format = 'Y-m-d') {
             if (! is_string($nilai) || $nilai === '') {
                 return null;
             }
             try {
-                return Carbon::createFromFormat('Y-m-d', $nilai, self::TZ)->startOfDay();
+                $c = Carbon::createFromFormat($format, $nilai, self::TZ);
+
+                return $c && $c->format($format) === $nilai ? $c->startOfDay() : null;
             } catch (\Throwable $e) {
                 return null;
             }
         };
 
-        $dari   = $parse($request->query('dari'));
-        $sampai = $parse($request->query('sampai'));
+        $mode = $request->query('mode');
 
-        if (! $dari || ! $sampai) {
-            if ($periode) {
-                $dari   = $periode->tanggal_mulai->copy();
-                $sampai = $periode->tanggal_selesai->copy();
-            } else {
-                $now    = self::sekarang();
-                $dari   = $now->copy()->startOfMonth();
-                $sampai = $now->copy()->endOfMonth();
+        if (! in_array($mode, ['bulan', 'tanggal', 'rentang'], true)) {
+            $mode = ($request->filled('dari') && $request->filled('sampai')) || $request->filled('periode')
+                ? 'rentang' : 'bulan';
+        }
+
+        $bulanAwal = $parse($request->query('bulan') ? $request->query('bulan') . '-01' : null);
+        $bulan     = ($bulanAwal ?? $now->copy()->startOfMonth())->format('Y-m');
+        $tanggal   = ($parse($request->query('tanggal')) ?? $now->copy()->startOfDay())->toDateString();
+
+        if ($mode === 'bulan') {
+            $dari   = Carbon::createFromFormat('Y-m-d', $bulan . '-01', self::TZ)->startOfDay();
+            $sampai = $dari->copy()->endOfMonth()->startOfDay();
+        } elseif ($mode === 'tanggal') {
+            $dari   = Carbon::createFromFormat('Y-m-d', $tanggal, self::TZ)->startOfDay();
+            $sampai = $dari->copy();
+        } else {
+            $dari   = $parse($request->query('dari'));
+            $sampai = $parse($request->query('sampai'));
+
+            if (! $dari || ! $sampai) {
+                if ($periode) {
+                    $dari   = $periode->tanggal_mulai->copy();
+                    $sampai = $periode->tanggal_selesai->copy();
+                } else {
+                    $dari   = $now->copy()->startOfMonth();
+                    $sampai = $now->copy()->endOfMonth()->startOfDay();
+                }
+            }
+
+            if ($dari->gt($sampai)) {
+                [$dari, $sampai] = [$sampai, $dari];
+            }
+            if ($dari->diffInDays($sampai) > 370) {
+                $sampai = $dari->copy()->addDays(370);
             }
         }
 
-        if ($dari->gt($sampai)) {
-            [$dari, $sampai] = [$sampai, $dari];
-        }
-        if ($dari->diffInDays($sampai) > 370) {
-            $sampai = $dari->copy()->addDays(370);
-        }
-
-        return [$dari, $sampai, $periodeList, $periodeId];
+        return compact('dari', 'sampai', 'periodeList', 'periodeId', 'mode', 'bulan', 'tanggal');
     }
 
     /** Data lengkap halaman Rekap Absensi Utama (view shared.rekap_utama). */
     public static function dataRekapUtama(Request $request, Collection $kelasList, string $aksi, $guru = null): array
     {
-        [$dari, $sampai, $periodeList, $periodeId] = self::rentang($request);
+        $r = self::rentang($request);
+        $dari = $r['dari'];
+        $sampai = $r['sampai'];
 
         $mentah = (string) $request->query('kelas', '');
         $semua  = mb_strtoupper($mentah) === 'ALL' && $kelasList->isNotEmpty();
@@ -521,8 +549,11 @@ class AbsenSiswaService
             'kelas'            => $kelas,
             'semua'            => $semua,
             'bisaSusulan'      => $guru !== null,
-            'periodeList'      => $periodeList,
-            'periodeId'        => $periodeId,
+            'periodeList'      => $r['periodeList'],
+            'periodeId'        => $r['periodeId'],
+            'mode'             => $r['mode'],
+            'bulan'            => $r['bulan'],
+            'tanggalPilih'     => $r['tanggal'],
             'dari'             => $dari->toDateString(),
             'sampai'           => $sampai->toDateString(),
             'hasil'            => $hasil,

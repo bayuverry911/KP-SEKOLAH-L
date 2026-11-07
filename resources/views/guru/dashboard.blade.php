@@ -261,7 +261,7 @@
                         @csrf
 
                         <button type="submit"
-                                onclick="return confirmLogout(event)"
+                                data-confirm="Apakah Anda yakin ingin keluar dari akun ini?"
                                 class="w-full text-left px-3 py-2 text-xs font-semibold
                                        text-rose-200 hover:text-white
                                        hover:bg-rose-600/30 rounded-lg
@@ -541,10 +541,12 @@
                                                 </span>
                                             @endif
 
-                                            <a href="{{ route('guru.rekap-siswa', ['kelas_mapel' => $k->kelas . '|' . $k->mapel]) }}"
-                                               class="mt-2 block text-center text-[11px] font-semibold text-white/90 hover:text-white underline underline-offset-2">
-                                                <i class="fa-solid fa-table-list mr-1"></i> Rekap Kelas {{ $k->kelas }}
-                                            </a>
+                                            @if($k->status === 'sudah' && ! $k->diganti_oleh)
+                                                <a href="{{ route('guru.kelola-absensi.form', $k->id) }}"
+                                                   class="mt-2 block text-center text-[11px] font-bold py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition">
+                                                    <i class="fa-solid fa-pen-to-square mr-1"></i> Kelola Absensi
+                                                </a>
+                                            @endif
                                         </div>
 
                                     </div>
@@ -971,25 +973,6 @@
             loadReminders();
 
         });
-
-
-        function confirmLogout(event) {
-
-            const confirmed = confirm(
-                "Apakah Anda yakin ingin keluar dari akun ini?"
-            );
-
-            if (!confirmed) {
-
-                event.preventDefault();
-
-                return false;
-
-            }
-
-            return true;
-
-        }
 
 
         // ===== TOAST NOTIFIKASI =====
@@ -1435,5 +1418,6 @@
 
     </script>
 
+@include('layouts.partials.ui')
 </body>
 </html>

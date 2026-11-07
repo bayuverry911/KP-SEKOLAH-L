@@ -127,6 +127,10 @@ Route::middleware(['auth', 'role:guru'])->prefix('guru')->name('guru.')->group(f
     Route::get('/absen-siswa/{jadwal}', [AbsenSiswaController::class, 'form'])->name('absen-siswa.form');
     Route::post('/absen-siswa/{jadwal}', [AbsenSiswaController::class, 'simpan'])->name('absen-siswa.simpan');
 
+    // Kelola Absensi: koreksi absen hari ini yang sudah tersimpan (UPDATE, tanpa baris ganda)
+    Route::get('/kelola-absensi/{jadwal}', [AbsenSiswaController::class, 'kelola'])->name('kelola-absensi.form');
+    Route::put('/kelola-absensi/{jadwal}', [AbsenSiswaController::class, 'perbarui'])->name('kelola-absensi.update');
+
     // Absen susulan: tanggal terlewat yang belum diabsen (halaman absen yang sama, bukan pop-up)
     Route::get('/absen-siswa/{jadwal}/susulan/{tanggal}', [AbsenSiswaController::class, 'formSusulan'])
         ->where('tanggal', '\d{4}-\d{2}-\d{2}')->name('absen-siswa.susulan');

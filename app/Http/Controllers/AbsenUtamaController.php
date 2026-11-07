@@ -262,6 +262,16 @@ class AbsenUtamaController extends Controller
             $filter['periode'] = $request->query('periode');
         }
 
+        if (in_array($request->query('mode'), ['bulan', 'tanggal', 'rentang'], true)) {
+            $filter['mode'] = $request->query('mode');
+        }
+        if (preg_match('/^\d{4}-\d{2}$/', (string) $request->query('bulan'))) {
+            $filter['bulan'] = $request->query('bulan');
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->query('tgl'))) {
+            $filter['tgl'] = $request->query('tgl');
+        }
+
         return $filter;
     }
 

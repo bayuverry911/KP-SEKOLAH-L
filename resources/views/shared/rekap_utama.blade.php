@@ -30,7 +30,7 @@
         'oleh'       => $k->oleh,
         'keterangan' => $k->keterangan,
         'urlSusulan' => ($k->susulan && $k->susulan['boleh'])
-            ? route('guru.absen-utama.susulan', [$k->susulan['jadwal_id'], $k->tanggal, 'kelas' => $kelas, 'periode' => $periodeId, 'dari' => $dari, 'sampai' => $sampai])
+            ? route('guru.absen-utama.susulan', [$k->susulan['jadwal_id'], $k->tanggal, 'kelas' => $kelas, 'periode' => $periodeId, 'dari' => $dari, 'sampai' => $sampai, 'mode' => $mode, 'bulan' => $bulan, 'tgl' => $tanggalPilih])
             : null,
         'penanggung' => $k->susulan ? ['nama' => $k->susulan['nama'], 'pengganti' => $k->susulan['pengganti']] : null,
     ]])->all() : [];
@@ -97,7 +97,7 @@
                 <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100 space-y-5">
 
                     <form method="GET" action="{{ $aksi }}" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end text-xs">
-                        <div class="md:col-span-3">
+                        <div class="md:col-span-4">
                             <label class="block font-semibold text-slate-600 mb-1">Kelas</label>
                             <select name="kelas" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-[#19A389]">
                                 @if($kelasList->isNotEmpty())
@@ -111,25 +111,7 @@
                             </select>
                         </div>
 
-                        <div class="md:col-span-3">
-                            <label class="block font-semibold text-slate-600 mb-1">Rentang Pembelajaran</label>
-                            <select name="periode" id="selectPeriode" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-[#19A389]">
-                                <option value="">- Atur tanggal manual -</option>
-                                @foreach($periodeList as $p)
-                                    <option value="{{ $p->id }}" data-mulai="{{ $p->tanggal_mulai->toDateString() }}" data-selesai="{{ $p->tanggal_selesai->toDateString() }}"
-                                            {{ (string) $periodeId === (string) $p->id ? 'selected' : '' }}>{{ $p->nama }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="md:col-span-4">
-                            <label class="block font-semibold text-slate-600 mb-1">Rentang Tanggal</label>
-                            <div class="flex items-center gap-2">
-                                <input type="date" name="dari" id="inputDari" value="{{ $dari }}" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                                <span class="font-semibold text-slate-500">s.d.</span>
-                                <input type="date" name="sampai" id="inputSampai" value="{{ $sampai }}" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                            </div>
-                        </div>
+                        @include('layouts.partials.filter-waktu')
 
                         <div class="md:col-span-2">
                             <button type="submit" class="w-full px-4 py-2.5 bg-[#19A389] hover:bg-[#138A73] text-white font-bold rounded-xl shadow transition">
@@ -344,17 +326,6 @@
             bar.textContent = flash.dataset.pesan;
             document.body.appendChild(bar);
             setTimeout(function () { bar.remove(); }, 7000);
-        }
-
-        const selectPeriode = document.getElementById('selectPeriode');
-        if (selectPeriode) {
-            selectPeriode.addEventListener('change', function () {
-                const opt = this.options[this.selectedIndex];
-                if (opt && opt.dataset.mulai) {
-                    document.getElementById('inputDari').value = opt.dataset.mulai;
-                    document.getElementById('inputSampai').value = opt.dataset.selesai;
-                }
-            });
         }
     </script>
 </body>

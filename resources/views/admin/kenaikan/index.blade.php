@@ -67,7 +67,7 @@
                             <hr class="border-slate-100">
 
                             <!-- LANGKAH 2: pilih siswa & tujuan -->
-                            <form method="POST" action="{{ route('admin.kenaikan.proses') }}" onsubmit="return konfirmasiProses()">
+                            <form method="POST" action="{{ route('admin.kenaikan.proses') }}" onsubmit="return konfirmasiProses(event)">
                                 @csrf
                                 <input type="hidden" name="tahun_asal_id" value="{{ $tahunAsal->id }}">
                                 <input type="hidden" name="kelas_asal_id" value="{{ $kelasAsal->id }}">
@@ -165,12 +165,19 @@
             });
         }
 
-        function konfirmasiProses() {
+        function konfirmasiProses(e) {
+            const f = e.target;
+            if (f.dataset.ok === '1') return true;
             const n = document.querySelectorAll('.cek-siswa:checked').length;
-            if (n === 0) { alert('Pilih minimal satu siswa.'); return false; }
+            if (n === 0) { uiToast('Pilih minimal satu siswa.', 'error'); return false; }
             const t = document.getElementById('tujuan');
             const label = t.options[t.selectedIndex].text;
-            return confirm('Proses ' + n + ' siswa menjadi: ' + label + '? Riwayat kelas lama tetap tersimpan.');
+            uiConfirm({
+                judul: 'Proses Kenaikan Kelas',
+                pesan: 'Proses ' + n + ' siswa menjadi: ' + label + '? Riwayat kelas lama tetap tersimpan.',
+                ok: 'Ya, Proses'
+            }, function () { f.dataset.ok = '1'; f.submit(); });
+            return false;
         }
 
         function toggleSidebar() {

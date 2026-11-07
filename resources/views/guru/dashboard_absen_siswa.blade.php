@@ -65,6 +65,14 @@
                         @endif
                     @endif
 
+                    @if($kelola ?? false)
+                        <div class="p-3 bg-sky-50 border border-sky-200 text-sky-900 text-xs rounded-xl flex items-start gap-2">
+                            <i class="fa-solid fa-pen-to-square text-sky-600 mt-0.5"></i>
+                            <span><b>Kelola Absensi.</b> Ubah status siswa yang salah input, lalu simpan.
+                                Perubahan hanya memperbarui data yang sudah ada (tidak menambah baris absensi baru).</span>
+                        </div>
+                    @endif
+
                     @if($susulan)
                         <div class="p-3 bg-amber-100 border border-amber-300 text-amber-900 text-xs rounded-xl flex items-start gap-2">
                             <i class="fa-solid fa-clock-rotate-left text-amber-600 mt-0.5"></i>
@@ -84,6 +92,10 @@
                                 <span>{{ $kartu->jam_masuk }} WIB</span>
                                 <span>•</span>
                             @else
+                                @if($kelola ?? false)
+                                    <span class="px-2 py-0.5 rounded-md bg-sky-100 text-sky-700 font-bold text-[10px] uppercase">Kelola Absensi</span>
+                                    <span>•</span>
+                                @endif
                                 <span class="text-[#19A389] font-bold">{{ $kartu->mapel }}</span>
                                 <span>•</span>
                                 <span class="font-bold text-slate-700">Kelas {{ $kartu->kelas }}</span>
@@ -115,8 +127,23 @@
                     </div>
 
                     <!-- FORM SIMPAN BATCH PRESENSI -->
-                    <form action="{{ $aksi }}" method="POST">
+                    <form action="{{ $aksi }}" method="POST" id="formAbsen" onsubmit="return validasiForm(event)">
                         @csrf
+                        @if($kelola ?? false) @method('PUT') @endif
+
+                        @unless($terkunci ?? false)
+                            <div class="flex flex-wrap items-center gap-2 mb-3 text-xs">
+                                <button type="button" onclick="pilihSemua()"
+                                        class="px-4 py-2 rounded-xl font-bold bg-[#47CB23] hover:bg-[#3bb61c] text-white shadow-sm transition">
+                                    <i class="fa-solid fa-check-double mr-1"></i> Pilih Semua (Hadir)
+                                </button>
+                                <button type="button" onclick="kosongkanSemua()"
+                                        class="px-4 py-2 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition">
+                                    <i class="fa-solid fa-eraser mr-1"></i> Kosongkan Semua
+                                </button>
+                                <span id="penghitung" class="ml-auto px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 font-bold">Terisi 0 / 0</span>
+                            </div>
+                        @endunless
                         <div class="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm">
                             <table class="w-full text-left text-xs min-w-[700px]" id="siswaTable">
                                 <thead class="bg-[#19A389] text-white font-bold uppercase tracking-wider">
@@ -134,7 +161,7 @@
                                         @php
                                             $siswaId =$s->id ?? ($index + 1);$namaSiswa = $s->nama ?? $s->name ?? '-';
                                             $kelasSiswa = $s->kelas ?? $kartu->kelas;
-                                            $statusSiswa = ($tersimpan ?? [])[$siswaId] ?? 'MASUK';
+                                            $statusSiswa = ($tersimpan ?? [])[$siswaId] ?? '';
                                         @endphp
                                         <tr class="hover:bg-slate-50/80 transition row-siswa">
                                             <td class="p-4 font-bold text-slate-800 nama-cell">{{ $namaSiswa }}</td>
@@ -161,16 +188,14 @@
                                                     <input type="hidden" name="presensi[{{ $siswaId }}]" id="input-status-{{ $siswaId }}" value="{{ $statusSiswa }}">
 
                                                     <!-- BADGE INDIKATOR (H / S / I / A) -->
-                                                    <div id="badge-{{ $siswaId }}" 
-                                                         class="w-7 h-7 flex items-center justify-center font-bold text-white text-xs rounded-sm shadow-sm transition-all duration-200 bg-[#47CB23]">
-                                                        H
-                                                    </div>
+                                                    <div id="badge-{{ $siswaId }}"
+                                                         class="w-7 h-7 flex items-center justify-center font-bold text-slate-400 text-xs rounded-sm bg-slate-100 transition-all duration-200">-</div>
 
                                                     <!-- TOMBOL PILIHAN STATUS -->
                                                     <div class="flex items-center gap-1.5 {{ ($terkunci ?? false) ? 'pointer-events-none opacity-90' : '' }}">
                                                         <!-- HADIR (MASUK) -->
                                                         <button type="button" onclick="selectStatus('{{ $siswaId }}', 'MASUK')" id="btn-masuk-{{ $siswaId }}"
-                                                                class="px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-[#47CB23] text-white border-[#47CB23] shadow-sm">
+                                                                class="px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-white text-emerald-600 border-emerald-400 hover:bg-emerald-50">
                                                             HADIR
                                                         </button>
 
@@ -212,7 +237,7 @@
                         <div class="pt-6 flex justify-end {{ ($terkunci ?? false) ? 'hidden' : '' }}">
                             <button type="submit" 
                                     class="px-8 py-3 bg-[#19A389] hover:bg-[#138A73] text-white font-bold rounded-2xl shadow-lg transition flex items-center gap-2 text-xs">
-                                <i class="fa-solid fa-circle-check"></i> Selesai Absen
+                                <i class="fa-solid fa-circle-check"></i> {{ ($kelola ?? false) ? 'Simpan Perubahan' : 'Selesai Absen' }}
                             </button>
                         </div>
                     </form>
@@ -230,47 +255,90 @@
             overlay.classList.toggle('hidden');
         }
 
-        // Sesuaikan tampilan awal dengan status tiap siswa (mis. Absensi Utama yang sudah terkunci)
+        const WARNA = {
+            MASUK: ['H', 'bg-[#47CB23]', 'bg-[#47CB23] text-white border-[#47CB23] shadow-md'],
+            SAKIT: ['S', 'bg-purple-600', 'bg-purple-600 text-white border-purple-600 shadow-md'],
+            IZIN:  ['I', 'bg-[#EFB82D]', 'bg-[#EFB82D] text-white border-[#EFB82D] shadow-md'],
+            ABSEN: ['A', 'bg-[#CE1B1B]', 'bg-[#CE1B1B] text-white border-[#CE1B1B] shadow-md']
+        };
+        const BASE = 'px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all ';
+        const NETRAL = {
+            MASUK: 'bg-white text-emerald-600 border-emerald-400 hover:bg-emerald-50',
+            SAKIT: 'bg-white text-purple-600 border-purple-400 hover:bg-purple-50',
+            IZIN:  'bg-white text-amber-600 border-amber-400 hover:bg-amber-50',
+            ABSEN: 'bg-white text-rose-600 border-rose-400 hover:bg-rose-50'
+        };
+        const ID_TOMBOL = { MASUK: 'btn-masuk', SAKIT: 'btn-sakit', IZIN: 'btn-izin', ABSEN: 'btn-absen' };
+
+        // Status '' = belum dipilih
+        function selectStatus(siswaId, status) {
+            document.getElementById('input-status-' + siswaId).value = status;
+
+            const badge = document.getElementById('badge-' + siswaId);
+            Object.keys(ID_TOMBOL).forEach(function (k) {
+                const b = document.getElementById(ID_TOMBOL[k] + '-' + siswaId);
+                if (b) b.className = BASE + NETRAL[k];
+            });
+
+            const base = 'w-7 h-7 flex items-center justify-center font-bold text-xs rounded-sm transition-all duration-200 ';
+            if (WARNA[status]) {
+                badge.textContent = WARNA[status][0];
+                badge.className = base + 'text-white shadow-sm ' + WARNA[status][1];
+                document.getElementById(ID_TOMBOL[status] + '-' + siswaId).className = BASE + WARNA[status][2];
+            } else {
+                badge.textContent = '-';
+                badge.className = base + 'text-slate-400 bg-slate-100';
+            }
+
+            const baris = badge.closest('tr');
+            if (baris) baris.classList.remove('bg-rose-50');
+            hitungTerisi();
+        }
+
+        function semuaInput() { return document.querySelectorAll('input[id^="input-status-"]'); }
+
+        function hitungTerisi() {
+            const el = document.getElementById('penghitung');
+            if (!el) return;
+            let terisi = 0;
+            const semua = semuaInput();
+            semua.forEach(function (i) { if (i.value) terisi++; });
+            el.textContent = 'Terisi ' + terisi + ' / ' + semua.length;
+            el.className = 'ml-auto px-3 py-1.5 rounded-full font-bold ' + (terisi === semua.length && semua.length > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600');
+        }
+
+        function pilihSemua() {
+            semuaInput().forEach(function (i) { selectStatus(i.id.replace('input-status-', ''), 'MASUK'); });
+        }
+
+        function kosongkanSemua() {
+            semuaInput().forEach(function (i) { selectStatus(i.id.replace('input-status-', ''), ''); });
+        }
+
+        // Semua siswa wajib punya status sebelum disimpan
+        function validasiForm(e) {
+            let kosong = null, jumlah = 0;
+            semuaInput().forEach(function (i) {
+                if (!i.value) {
+                    jumlah++;
+                    const tr = i.closest('tr');
+                    if (tr) { tr.classList.add('bg-rose-50'); if (!kosong) kosong = tr; }
+                }
+            });
+            if (jumlah > 0) {
+                uiToast(jumlah + ' siswa belum dipilih statusnya. Klik "Pilih Semua (Hadir)" lalu ubah yang tidak hadir.', 'error', 'Absensi belum lengkap');
+                if (kosong) kosong.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return false;
+            }
+            return true;
+        }
+
+        // Sesuaikan tampilan awal dengan status tersimpan (mis. Absensi Utama terkunci / Kelola Absensi)
         document.addEventListener('DOMContentLoaded', function () {
-            document.querySelectorAll('input[id^="input-status-"]').forEach(function (el) {
+            semuaInput().forEach(function (el) {
                 selectStatus(el.id.replace('input-status-', ''), el.value);
             });
         });
-
-        // LOGIC UPDATE TAMPILAN STATUS (HADIR, SAKIT, IZIN, ABSEN)
-        function selectStatus(siswaId, status) {
-            document.getElementById(`input-status-${siswaId}`).value = status;
-
-            const badge = document.getElementById(`badge-${siswaId}`);
-            const btnMasuk = document.getElementById(`btn-masuk-${siswaId}`);
-            const btnSakit = document.getElementById(`btn-sakit-${siswaId}`);
-            const btnIzin = document.getElementById(`btn-izin-${siswaId}`);
-            const btnAbsen = document.getElementById(`btn-absen-${siswaId}`);
-
-            // Reset Kelas Warna Tombol
-            btnMasuk.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-white text-blue-500 border-blue-400 hover:bg-blue-50";
-            btnSakit.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-white text-purple-600 border-purple-400 hover:bg-purple-50";
-            btnIzin.className  = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-white text-amber-600 border-amber-400 hover:bg-amber-50";
-            btnAbsen.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-white text-rose-600 border-rose-400 hover:bg-rose-50";
-
-            if (status === 'MASUK') {
-                badge.innerText = 'H';
-                badge.className = "w-7 h-7 flex items-center justify-center font-bold text-white text-xs rounded-sm shadow-sm transition-all bg-[#47CB23]";
-                btnMasuk.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-[#47CB23] text-white border-[#47CB23] shadow-md";
-            } else if (status === 'SAKIT') {
-                badge.innerText = 'S';
-                badge.className = "w-7 h-7 flex items-center justify-center font-bold text-white text-xs rounded-sm shadow-sm transition-all bg-purple-600";
-                btnSakit.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-purple-600 text-white border-purple-600 shadow-md";
-            } else if (status === 'IZIN') {
-                badge.innerText = 'I';
-                badge.className = "w-7 h-7 flex items-center justify-center font-bold text-white text-xs rounded-sm shadow-sm transition-all bg-[#EFB82D]";
-                btnIzin.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-[#EFB82D] text-white border-[#EFB82D] shadow-md";
-            } else if (status === 'ABSEN') {
-                badge.innerText = 'A';
-                badge.className = "w-7 h-7 flex items-center justify-center font-bold text-white text-xs rounded-sm shadow-sm transition-all bg-[#CE1B1B]";
-                btnAbsen.className = "px-3 py-1.5 rounded-lg font-bold border text-[11px] transition-all bg-[#CE1B1B] text-white border-[#CE1B1B] shadow-md";
-            }
-        }
 
         // CARI NAMA SISWA
         function filterSiswaTable() {

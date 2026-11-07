@@ -35,7 +35,7 @@
         'state'      => $k->state,
         'keterangan' => $k->keterangan,
         'urlSusulan' => ($k->susulan && $k->susulan['boleh'])
-            ? route('guru.absen-siswa.susulan', [$k->susulan['jadwal_id'], $k->tanggal, 'kelas_mapel' => $terpilih['key'], 'periode' => $periodeId, 'dari' => $dari, 'sampai' => $sampai])
+            ? route('guru.absen-siswa.susulan', [$k->susulan['jadwal_id'], $k->tanggal, 'kelas_mapel' => $terpilih['key'], 'periode' => $periodeId, 'dari' => $dari, 'sampai' => $sampai, 'mode' => $mode, 'bulan' => $bulan, 'tgl' => $tanggalPilih])
             : null,
         'penanggung' => $k->susulan ? ['nama' => $k->susulan['nama'], 'pengganti' => $k->susulan['pengganti']] : null,
     ]])->all();
@@ -82,7 +82,7 @@
                     <form method="GET" action="{{ route('guru.rekap-siswa') }}" id="formFilter"
                           class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end text-xs">
 
-                        <div class="md:col-span-3">
+                        <div class="md:col-span-4">
                             <label class="block font-semibold text-slate-600 mb-1">Kelas &amp; Mata Pelajaran</label>
                             <select name="kelas_mapel" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-bold focus:outline-none focus:border-[#19A389]">
                                 @if($opsi->isNotEmpty())
@@ -98,31 +98,7 @@
                             </select>
                         </div>
 
-                        <div class="md:col-span-3">
-                            <label class="block font-semibold text-slate-600 mb-1">Rentang Pembelajaran</label>
-                            <select name="periode" id="selectPeriode" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-bold focus:outline-none focus:border-[#19A389]">
-                                <option value="">- Atur tanggal manual -</option>
-                                @foreach($periodeList as $p)
-                                    <option value="{{ $p->id }}"
-                                            data-mulai="{{ $p->tanggal_mulai->toDateString() }}"
-                                            data-selesai="{{ $p->tanggal_selesai->toDateString() }}"
-                                            {{ (string) $periodeId === (string) $p->id ? 'selected' : '' }}>
-                                        {{ $p->nama }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="md:col-span-4">
-                            <label class="block font-semibold text-slate-600 mb-1">Rentang Tanggal @if($tahunAktif)<span class="font-normal text-slate-400">(TP {{ $tahunAktif->nama }})</span>@endif</label>
-                            <div class="flex items-center gap-2">
-                                <input type="date" name="dari" id="inputDari" value="{{ $dari }}" @if($tahunAktif) min="{{ $tahunAktif->tanggal_mulai->toDateString() }}" max="{{ $tahunAktif->tanggal_selesai->toDateString() }}" @endif
-                                       class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#19A389]">
-                                <span class="font-semibold text-slate-500">s.d.</span>
-                                <input type="date" name="sampai" id="inputSampai" value="{{ $sampai }}" @if($tahunAktif) min="{{ $tahunAktif->tanggal_mulai->toDateString() }}" max="{{ $tahunAktif->tanggal_selesai->toDateString() }}" @endif
-                                       class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#19A389]">
-                            </div>
-                        </div>
+                        @include('layouts.partials.filter-waktu')
 
                         <div class="md:col-span-2">
                             <button type="submit" class="w-full px-4 py-2.5 bg-[#19A389] hover:bg-[#138A73] text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2">
@@ -336,6 +312,9 @@
             <input type="hidden" name="periode" value="{{ $periodeId }}">
             <input type="hidden" name="dari" value="{{ $dari }}">
             <input type="hidden" name="sampai" value="{{ $sampai }}">
+            <input type="hidden" name="mode" value="{{ $mode }}">
+            <input type="hidden" name="bulan" value="{{ $bulan }}">
+            <input type="hidden" name="tanggal_filter" value="{{ $tanggalPilih }}">
         </form>
     @endif
 
@@ -353,18 +332,6 @@
             const overlay = document.getElementById('mobileOverlay');
             if (sidebar) sidebar.classList.toggle('-translate-x-full');
             if (overlay) overlay.classList.toggle('hidden');
-        }
-
-        // Pilih periode pembelajaran -> isi otomatis rentang tanggal
-        const selectPeriode = document.getElementById('selectPeriode');
-        if (selectPeriode) {
-            selectPeriode.addEventListener('change', function () {
-                const opt = this.options[this.selectedIndex];
-                if (opt && opt.dataset.mulai) {
-                    document.getElementById('inputDari').value = opt.dataset.mulai;
-                    document.getElementById('inputSampai').value = opt.dataset.selesai;
-                }
-            });
         }
 
         // ===== MODAL DETAIL TANGGAL (mode satu kelas) =====

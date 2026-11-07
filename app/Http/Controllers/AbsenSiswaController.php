@@ -54,6 +54,132 @@ class AbsenSiswaController extends Controller
     }
 
     // =====================================================================
+    //  KELOLA ABSENSI (koreksi salah input pada absen HARI INI yang sudah tersimpan)
+    //  Hanya memperbarui baris yang ada (UPDATE) - tidak menambah baris ganda.
+    // =====================================================================
+    public function kelola(Jadwal $jadwal)
+    {
+        $now   = Absen::sekarang();
+        $kartu = Absen::kartuUntuk(Auth::user(), $jadwal->id, $now);
+
+        if ($pesan = $this->pesanKelola($kartu)) {
+            return redirect()->route('guru.dashboard')->with('error', $pesan);
+        }
+
+        $tanggal = $now->toDateString();
+        $baris   = $this->barisAbsen($kartu->kelas, $kartu->mapel, $tanggal);
+
+        return view('guru.dashboard_absen_siswa', [
+            'jadwal'    => $jadwal,
+            'kartu'     => $kartu,
+            'siswas'    => Absen::siswaKelas($kartu->kelas, $now),
+            'pertemuan' => $baris->first()->pertemuan_ke ?? '-',
+            'now'       => $now,
+            'aksi'      => route('guru.kelola-absensi.update', $jadwal->id),
+            'susulan'   => false,
+            'kembali'   => null,
+            'kelola'    => true,
+            'tersimpan' => $baris->pluck('status', 'siswa_id')->all(),
+            'utamaInfo' => Absen::infoUtama($kartu->kelas, $tanggal),
+        ]);
+    }
+
+    public function perbarui(Request $request, Jadwal $jadwal): RedirectResponse
+    {
+        $request->validate([
+            'presensi'   => 'required|array',
+            'presensi.*' => 'in:MASUK,IZIN,SAKIT,ABSEN',
+        ]);
+
+        $now   = Absen::sekarang();
+        $kartu = Absen::kartuUntuk(Auth::user(), $jadwal->id, $now);
+
+        if ($pesan = $this->pesanKelola($kartu)) {
+            return redirect()->route('guru.dashboard')->with('error', $pesan);
+        }
+
+        $tanggal  = $now->toDateString();
+        $siswas   = Absen::siswaKelas($kartu->kelas, $now);
+        $presensi = $request->input('presensi');
+
+        foreach ($siswas as $s) {
+            if (! isset($presensi[$s->id])) {
+                return redirect()->back()->with('error', 'Data presensi tidak lengkap. Muat ulang halaman lalu coba lagi.');
+            }
+        }
+
+        $berubah = 0;
+        $baru    = 0;
+
+        DB::transaction(function () use ($siswas, $presensi, $kartu, $tanggal, &$berubah, &$baru) {
+            $baris = $this->barisAbsen($kartu->kelas, $kartu->mapel, $tanggal, true)->keyBy('siswa_id');
+            $meta  = $baris->first();
+
+            foreach ($siswas as $s) {
+                $status = $presensi[$s->id];
+
+                if ($baris->has($s->id)) {
+                    // UPDATE baris yang sudah ada - hanya bila statusnya berubah
+                    if ($baris[$s->id]->status !== $status) {
+                        DB::table('absensi_siswas')->where('id', $baris[$s->id]->id)
+                            ->update(['status' => $status, 'updated_at' => now()]);
+                        $berubah++;
+                    }
+                } elseif ($meta) {
+                    // Siswa yang baru terdaftar di kelas setelah absen disimpan: satu baris, tanpa duplikasi
+                    DB::table('absensi_siswas')->insert([
+                        'user_id'      => $meta->user_id,
+                        'jadwal_id'    => $meta->jadwal_id,
+                        'is_pengganti' => $meta->is_pengganti,
+                        'siswa_id'     => $s->id,
+                        'kelas'        => $meta->kelas,
+                        'mapel'        => $meta->mapel,
+                        'pertemuan_ke' => $meta->pertemuan_ke,
+                        'tanggal'      => $tanggal,
+                        'status'       => $status,
+                        'jam_masuk'    => $meta->jam_masuk,
+                        'jam_selesai'  => $meta->jam_selesai,
+                        'created_at'   => now(),
+                        'updated_at'   => now(),
+                    ]);
+                    $baru++;
+                }
+            }
+        });
+
+        $total = $berubah + $baru;
+
+        return redirect()->route('guru.dashboard')->with(
+            'success',
+            $total === 0
+                ? "Absensi Kelas {$kartu->kelas} - {$kartu->mapel} tidak ada perubahan."
+                : "Absensi Kelas {$kartu->kelas} - {$kartu->mapel} diperbarui ({$total} data diubah)."
+        );
+    }
+
+    private function pesanKelola(?object $kartu): ?string
+    {
+        return match (true) {
+            $kartu === null                  => 'Jadwal ini tidak tersedia untuk Anda hari ini.',
+            (bool) ($kartu->diganti_oleh ?? null) => "Hari ini kelas diajar oleh {$kartu->diganti_oleh}. Hanya guru pengganti yang dapat mengelola absensinya.",
+            $kartu->status === 'libur'       => "Hari ini libur ({$kartu->libur}).",
+            $kartu->status !== 'sudah'       => 'Kelas ini belum diabsen hari ini. Gunakan tombol Mulai Absen pada kartu kelas.',
+            default                          => null,
+        };
+    }
+
+    /** Baris absensi satu kelas + mapel pada tanggal tertentu (opsional dikunci untuk update). */
+    private function barisAbsen(string $kelas, string $mapel, string $tanggal, bool $kunci = false)
+    {
+        $q = DB::table('absensi_siswas')
+            ->where('tanggal', $tanggal)
+            ->whereRaw('lower(mapel) = ?', [mb_strtolower($mapel)]);
+        Absen::whereKelas($q, 'kelas', $kelas);
+
+        return $kunci ? $q->lockForUpdate()->get() : $q->get();
+    }
+
+    // =====================================================================
     //  ABSEN SUSULAN (tanggal terlewat yang belum diabsen)
     //  Hanya guru yang bertanggung jawab pada tanggal itu: guru pengganti
     //  bila ada yang di-plot admin, selain itu guru mapel pada jadwal.
@@ -289,6 +415,16 @@ class AbsenSiswaController extends Controller
             $filter['periode'] = (string) $request->query('periode');
         }
 
+        if (in_array($request->query('mode'), ['bulan', 'tanggal', 'rentang'], true)) {
+            $filter['mode'] = $request->query('mode');
+        }
+        if (preg_match('/^\d{4}-\d{2}$/', (string) $request->query('bulan'))) {
+            $filter['bulan'] = $request->query('bulan');
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->query('tgl'))) {
+            $filter['tgl'] = $request->query('tgl');
+        }
+
         return $filter;
     }
 
@@ -310,42 +446,13 @@ class AbsenSiswaController extends Controller
             ? ['kelas' => 'Semua Kelas', 'mapel' => null, 'key' => 'ALL']
             : ($opsi->firstWhere('key', $kunci) ?? $opsi->first());
 
-        // ---- rentang tanggal (periode pembelajaran atau manual) ----
-        $periodeList = PeriodePembelajaran::orderBy('tanggal_mulai')->get();
-        $periodeId   = $request->query('periode');
-        $periode     = $periodeId ? $periodeList->firstWhere('id', (int) $periodeId) : null;
-
-        // Kunjungan pertama (tanpa filter): default ke periode pembelajaran yang mencakup hari ini
-        $tahunAktif = TahunPelajaran::aktif();
-
-        if (! $request->hasAny(['dari', 'sampai', 'periode'])) {
-            $hariIniTgl = Absen::sekarang()->startOfDay();
-            $periode = $periodeList->first(
-                fn ($p) => $p->tanggal_mulai->lte($hariIniTgl) && $p->tanggal_selesai->gte($hariIniTgl)
-            );
-            $periodeId = $periode?->id;
-        }
-
-        $dari   = $this->parseTanggal($request->query('dari'));
-        $sampai = $this->parseTanggal($request->query('sampai'));
-
-        if (! $dari || ! $sampai) {
-            if ($periode) {
-                $dari   = $periode->tanggal_mulai->copy();
-                $sampai = $periode->tanggal_selesai->copy();
-            } else {
-                $now    = Absen::sekarang();
-                $dari   = $now->copy()->startOfMonth();
-                $sampai = $now->copy()->endOfMonth();
-            }
-        }
-
-        if ($dari->gt($sampai)) {
-            [$dari, $sampai] = [$sampai, $dari];
-        }
-        if ($dari->diffInDays($sampai) > 370) {
-            $sampai = $dari->copy()->addDays(370);
-        }
+        // ---- filter waktu: bulan | tanggal | rentang ----
+        $tahunAktif  = TahunPelajaran::aktif();
+        $r           = Absen::rentang($request);
+        $dari        = $r['dari'];
+        $sampai      = $r['sampai'];
+        $periodeList = $r['periodeList'];
+        $periodeId   = $r['periodeId'];
 
         $data = [
             'opsi'         => $opsi,
@@ -353,6 +460,9 @@ class AbsenSiswaController extends Controller
             'semua'        => $semua,
             'periodeList'  => $periodeList,
             'periodeId'    => $periodeId,
+            'mode'         => $r['mode'],
+            'bulan'        => $r['bulan'],
+            'tanggalPilih' => $r['tanggal'],
             'dari'         => $dari->toDateString(),
             'sampai'       => $sampai->toDateString(),
             'guru'         => $guru,
@@ -639,7 +749,11 @@ class AbsenSiswaController extends Controller
                 && mb_strtolower($o['mapel']) === mb_strtolower($data['mapel'])
         );
 
-        $balik = $request->only(['kelas_mapel', 'periode', 'dari', 'sampai']);
+        $balik = $request->only(['kelas_mapel', 'periode', 'dari', 'sampai', 'mode', 'bulan']);
+
+        if ($request->filled('tanggal_filter')) {
+            $balik['tgl'] = $request->input('tanggal_filter');   // filter tanggal tunggal
+        }
 
         if (! $berhak) {
             return redirect()->route('guru.rekap-siswa', $balik)
