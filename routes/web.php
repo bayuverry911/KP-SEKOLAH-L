@@ -68,7 +68,12 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     
     Route::resource('users', UserController::class);
     Route::resource('data-guru', GuruController::class)->names('guru');
+
+    // Import Excel & Download Template Siswa (harus di atas Route::resource('siswa'))
+    Route::get('/siswa/template-excel', [SiswaController::class, 'downloadTemplate'])->name('siswa.template');
+    Route::post('/siswa/import-excel', [SiswaController::class, 'importExcel'])->name('siswa.import');
     Route::resource('siswa', SiswaController::class);
+
     Route::resource('kelas', KelasController::class);
     Route::resource('mapel', MapelController::class);
 

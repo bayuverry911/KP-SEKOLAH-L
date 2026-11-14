@@ -17,7 +17,40 @@
     $terkunciIzin = (bool) optional($absensiHariIni)->terkunci;
     $statusHari   = optional($absensiHariIni)->status;
     $radiusTeks   = \App\Support\Geofence::format((int) config('sekolah.radius_meter'));
-    $defaultAksi  = $sudahMasuk ? 'pulang' : 'masuk';
+
+    // Aturan Jendela Waktu Presensi (WIB)
+    $bukaMasuk    = $hariIni->copy()->setTime(6, 0, 0);
+    $batasTelat   = $hariIni->copy()->setTime(7, 20, 0);
+    $lockMasuk    = $hariIni->copy()->setTime(8, 30, 0);
+
+    $bukaPulang   = $hariIni->copy()->setTime(13, 35, 0);
+    $lockPulang   = $hariIni->copy()->setTime(16, 30, 0);
+
+    $bisaMasukWaktu  = $hariIni->between($bukaMasuk, $lockMasuk);
+    $bisaPulangWaktu = $hariIni->between($bukaPulang, $lockPulang);
+    $sedangTelat     = $hariIni->gt($batasTelat) && $hariIni->lte($lockMasuk);
+
+    $infoWaktuMasuk = match (true) {
+        $sudahMasuk                 => 'Sudah dicatat pukul ' . \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i'),
+        $hariIni->lt($bukaMasuk)    => 'Terkunci — Dibuka pukul 06:00 WIB',
+        $hariIni->gt($lockMasuk)    => 'Terkunci — Melewati batas 08:30 WIB',
+        $sedangTelat                => 'Dibuka (Terlambat > 07:20 WIB)',
+        default                     => 'Dibuka (06:00 - 07:20 Tepat Waktu)',
+    };
+
+    $infoWaktuPulang = match (true) {
+        $sudahPulang                => 'Sudah dicatat pukul ' . \Carbon\Carbon::parse($absensiHariIni->jam_keluar)->format('H:i'),
+        ! $sudahMasuk               => 'Tersedia setelah presensi masuk',
+        $hariIni->lt($bukaPulang)   => 'Terkunci — Baru dibuka pukul 13:35 WIB',
+        $hariIni->gt($lockPulang)   => 'Terkunci — Melewati batas 16:30 WIB',
+        default                     => 'Dibuka (13:35 - 16:30 WIB)',
+    };
+
+    $masukTersedia  = ! $sudahMasuk && $bisaMasukWaktu;
+    $pulangTersedia = $sudahMasuk && ! $sudahPulang && $bisaPulangWaktu;
+    $aksiTerkunci   = ! $masukTersedia && ! $pulangTersedia;
+
+    $defaultAksi = $pulangTersedia ? 'pulang' : ($masukTersedia ? 'masuk' : '');
 @endphp
 
     <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 z-40 hidden lg:hidden backdrop-blur-sm"></div>
@@ -45,7 +78,7 @@
                         <div>
                             <p class="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Presensi Guru</p>
                             <h2 class="text-xl sm:text-2xl font-extrabold mt-0.5">{{ Auth::user()->name }}</h2>
-                            <p class="text-xs text-white/80 mt-1">SMP Djojoredjo</p>
+                            <p class="text-xs text-white/80 mt-1">SMP Djojoredjo • Jam Masuk 06:00–08:30 (Toleransi 07:20) • Pulang 13:35–16:30</p>
                         </div>
                         <div class="text-left sm:text-right">
                             <p class="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Waktu Sekarang</p>
@@ -118,34 +151,47 @@
 
                             <!-- PILIH AKSI -->
                             <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-xl border border-slate-100">
-                                <h3 class="text-sm font-bold text-slate-900 mb-3">Pilih Presensi</h3>
+                                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                    <h3 class="text-sm font-bold text-slate-900">Pilih Presensi</h3>
+                                    <span class="text-[11px] font-semibold text-slate-500">
+                                        Masuk: <b>06:00–08:30</b> (Batas Telat 07:20) • Pulang: <b>13:35–16:30</b>
+                                    </span>
+                                </div>
+
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <label class="cursor-pointer {{ $sudahMasuk ? 'cursor-not-allowed opacity-60' : '' }}">
-                                        <input type="radio" name="aksi" value="masuk" class="peer hidden" {{ $defaultAksi === 'masuk' && ! $sudahMasuk ? 'checked' : '' }} {{ $sudahMasuk ? 'disabled' : '' }}>
+                                    <!-- KARTU PRESENSI MASUK -->
+                                    <label id="card_masuk" class="{{ $masukTersedia ? 'cursor-pointer' : 'cursor-not-allowed opacity-65' }}">
+                                        <input type="radio" name="aksi" id="radio_masuk" value="masuk" class="peer hidden"
+                                               {{ $defaultAksi === 'masuk' ? 'checked' : '' }}
+                                               {{ ! $masukTersedia ? 'disabled' : '' }}>
                                         <span class="flex items-center gap-3 p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 transition peer-checked:border-[#19A389] peer-checked:bg-emerald-50">
-                                            <span class="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg"><i class="fa-solid fa-right-to-bracket"></i></span>
+                                            <span id="icon_box_masuk" class="w-11 h-11 rounded-xl {{ $masukTersedia ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-500' }} flex items-center justify-center text-lg">
+                                                <i id="icon_masuk" class="fa-solid {{ $masukTersedia ? 'fa-right-to-bracket' : ($sudahMasuk ? 'fa-circle-check' : 'fa-lock') }}"></i>
+                                            </span>
                                             <span>
                                                 <span class="block text-sm font-bold text-slate-800">Presensi Masuk</span>
-                                                <span class="block text-[11px] text-slate-500">{{ $sudahMasuk ? 'Sudah dicatat pukul ' . \Carbon\Carbon::parse($absensiHariIni->jam_masuk)->format('H:i') : 'Catat kedatangan Anda' }}</span>
+                                                <span id="sub_masuk" class="block text-[11px] {{ $sedangTelat && ! $sudahMasuk ? 'text-amber-600 font-bold' : 'text-slate-500' }}">{{ $infoWaktuMasuk }}</span>
                                             </span>
                                         </span>
                                     </label>
 
-                                    <label class="cursor-pointer {{ (! $sudahMasuk || $sudahPulang) ? 'cursor-not-allowed opacity-60' : '' }}">
-                                        <input type="radio" name="aksi" value="pulang" class="peer hidden" {{ $defaultAksi === 'pulang' && $sudahMasuk && ! $sudahPulang ? 'checked' : '' }} {{ (! $sudahMasuk || $sudahPulang) ? 'disabled' : '' }}>
+                                    <!-- KARTU PRESENSI PULANG -->
+                                    <label id="card_pulang" class="{{ $pulangTersedia ? 'cursor-pointer' : 'cursor-not-allowed opacity-65' }}">
+                                        <input type="radio" name="aksi" id="radio_pulang" value="pulang" class="peer hidden"
+                                               {{ $defaultAksi === 'pulang' ? 'checked' : '' }}
+                                               {{ ! $pulangTersedia ? 'disabled' : '' }}>
                                         <span class="flex items-center gap-3 p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 transition peer-checked:border-blue-600 peer-checked:bg-blue-50">
-                                            <span class="w-11 h-11 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-lg"><i class="fa-solid fa-right-from-bracket"></i></span>
+                                            <span id="icon_box_pulang" class="w-11 h-11 rounded-xl {{ $pulangTersedia ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500' }} flex items-center justify-center text-lg">
+                                                <i id="icon_pulang" class="fa-solid {{ $pulangTersedia ? 'fa-right-from-bracket' : ($sudahPulang ? 'fa-circle-check' : 'fa-lock') }}"></i>
+                                            </span>
                                             <span>
                                                 <span class="block text-sm font-bold text-slate-800">Presensi Pulang</span>
-                                                <span class="block text-[11px] text-slate-500">
-                                                    @if($sudahPulang) Sudah dicatat pukul {{ \Carbon\Carbon::parse($absensiHariIni->jam_keluar)->format('H:i') }}
-                                                    @elseif(! $sudahMasuk) Tersedia setelah presensi masuk
-                                                    @else Catat kepulangan Anda @endif
-                                                </span>
+                                                <span id="sub_pulang" class="block text-[11px] text-slate-500">{{ $infoWaktuPulang }}</span>
                                             </span>
                                         </span>
                                     </label>
                                 </div>
+
                                 <p class="text-[11px] text-slate-500 mt-3">
                                     <i class="fa-solid fa-circle-info text-sky-500 mr-1"></i>
                                     Tidak masuk karena sakit atau dinas? Ajukan melalui menu
@@ -204,12 +250,14 @@
                                 <textarea name="keterangan" rows="2" placeholder="Mis. terlambat karena ..." class="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-[#24B9A1]"></textarea>
                             </div>
 
-                            <button type="submit" id="btn_kirim" {{ $lengkap ? 'disabled' : '' }}
+                            <button type="submit" id="btn_kirim" {{ ($lengkap || $aksiTerkunci) ? 'disabled' : '' }}
                                     class="w-full py-4 bg-[#19A389] hover:bg-[#138A73] text-white font-bold rounded-2xl text-sm shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
                                 @if($lengkap)
                                     <i class="fa-solid fa-circle-check mr-1"></i> Presensi Hari Ini Sudah Lengkap
+                                @elseif($aksiTerkunci)
+                                    <i class="fa-solid fa-lock mr-1"></i> <span id="label_kirim">Presensi Terkunci di Luar Jam Jadwal</span>
                                 @else
-                                    <i class="fa-solid fa-paper-plane mr-1"></i> <span id="label_kirim">Kirim Presensi</span>
+                                    <i class="fa-solid fa-paper-plane mr-1"></i> <span id="label_kirim">{{ $defaultAksi === 'pulang' ? 'Kirim Presensi Pulang' : 'Kirim Presensi Masuk' }}</span>
                                 @endif
                             </button>
                         </fieldset>
@@ -219,14 +267,17 @@
         </main>
     </div>
 
-    <!-- Konfigurasi lokasi sekolah (dibaca oleh JavaScript di bawah) -->
+    <!-- Konfigurasi lokasi & jendela waktu sekolah -->
     <div id="gps-config" class="hidden"
          data-lat="{{ config('sekolah.latitude') }}"
          data-lng="{{ config('sekolah.longitude') }}"
          data-radius="{{ (int) config('sekolah.radius_meter') }}"
          data-akurasi="{{ (int) config('sekolah.akurasi_maks_meter') }}"
          data-wajib="{{ config('sekolah.gps_wajib') ? '1' : '0' }}"
-         data-lengkap="{{ $lengkap ? '1' : '0' }}"></div>
+         data-lengkap="{{ $lengkap ? '1' : '0' }}"
+         data-sudah-masuk="{{ $sudahMasuk ? '1' : '0' }}"
+         data-sudah-pulang="{{ $sudahPulang ? '1' : '0' }}"
+         data-terkunci-izin="{{ $terkunciIzin ? '1' : '0' }}"></div>
 
     <script>
         function toggleSidebar() {
@@ -236,17 +287,6 @@
             if (overlay) overlay.classList.toggle('hidden');
         }
 
-        // ===== JAM OTOMATIS =====
-        function tickJam() {
-            document.getElementById('waktu_otomatis').textContent =
-                new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour12: false }).replace(/\./g, ':');
-        }
-        tickJam();
-        setInterval(tickJam, 1000);
-
-        // ===== LOKASI GPS =====
-        // Pengecekan di sini hanya untuk kenyamanan pengguna.
-        // Validasi yang sebenarnya (dan tidak bisa dilewati) dilakukan di server.
         const cfg = document.getElementById('gps-config').dataset;
         const SEKOLAH = {
             lat: cfg.lat === '' ? null : parseFloat(cfg.lat),
@@ -255,6 +295,9 @@
             akurasi: parseInt(cfg.akurasi, 10),
             wajib: cfg.wajib === '1',
             lengkap: cfg.lengkap === '1',
+            sudahMasuk: cfg.sudahMasuk === '1',
+            sudahPulang: cfg.sudahPulang === '1',
+            terkunciIzin: cfg.terkunciIzin === '1',
         };
 
         const form = document.getElementById('form_presensi');
@@ -272,7 +315,75 @@
         let lokasiOk = false;
         let watchId = null;
 
-        // 85 -> "85 m", 1250 -> "1,25 km"
+        // Ambil waktu Jakarta (WIB) saat ini dalam detik sejak 00:00:00
+        function getDetikWIB() {
+            const str = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour12: false });
+            const [j, m, d] = str.split(':').map(Number);
+            return { teks: str, detik: j * 3600 + m * 60 + d };
+        }
+
+        function cekStatusWaktu() {
+            const { teks: jamTeks, detik } = getDetikWIB();
+            document.getElementById('waktu_otomatis').textContent = jamTeks;
+
+            // Jendela waktu dalam detik:
+            // Masuk: 06:00 (21600) - 08:30 (30600), toleransi telat: 07:20 (26400)
+            // Pulang: 13:35 (48900) - 16:30 (59400)
+            const bukaMasuk  = 6 * 3600;
+            const batasTelat = 7 * 3600 + 20 * 60;
+            const lockMasuk  = 8 * 3600 + 30 * 60;
+            const bukaPulang = 13 * 3600 + 35 * 60;
+            const lockPulang = 16 * 3600 + 30 * 60;
+
+            const bisaMasuk  = !SEKOLAH.sudahMasuk && !SEKOLAH.terkunciIzin && detik >= bukaMasuk && detik <= lockMasuk;
+            const bisaPulang = SEKOLAH.sudahMasuk && !SEKOLAH.sudahPulang && !SEKOLAH.terkunciIzin && detik >= bukaPulang && detik <= lockPulang;
+
+            const radioMasuk  = document.getElementById('radio_masuk');
+            const radioPulang = document.getElementById('radio_pulang');
+            const cardMasuk   = document.getElementById('card_masuk');
+            const cardPulang  = document.getElementById('card_pulang');
+            const subMasuk    = document.getElementById('sub_masuk');
+            const subPulang   = document.getElementById('sub_pulang');
+
+            if (radioMasuk && !SEKOLAH.sudahMasuk) {
+                radioMasuk.disabled = !bisaMasuk;
+                cardMasuk.className = bisaMasuk ? 'cursor-pointer' : 'cursor-not-allowed opacity-65';
+                if (bisaMasuk && !radioMasuk.checked && !bisaPulang) radioMasuk.checked = true;
+                if (!bisaMasuk) radioMasuk.checked = false;
+
+                if (detik < bukaMasuk) subMasuk.textContent = 'Terkunci — Dibuka pukul 06:00 WIB';
+                else if (detik > lockMasuk) subMasuk.textContent = 'Terkunci — Melewati batas 08:30 WIB';
+                else if (detik > batasTelat) subMasuk.textContent = 'Dibuka (Terlambat > 07:20 WIB)';
+                else subMasuk.textContent = 'Dibuka (06:00 - 07:20 Tepat Waktu)';
+            }
+
+            if (radioPulang && SEKOLAH.sudahMasuk && !SEKOLAH.sudahPulang) {
+                radioPulang.disabled = !bisaPulang;
+                cardPulang.className = bisaPulang ? 'cursor-pointer' : 'cursor-not-allowed opacity-65';
+                if (bisaPulang && !radioPulang.checked) radioPulang.checked = true;
+                if (!bisaPulang) radioPulang.checked = false;
+
+                if (detik < bukaPulang) subPulang.textContent = 'Terkunci — Baru dibuka pukul 13:35 WIB';
+                else if (detik > lockPulang) subPulang.textContent = 'Terkunci — Melewati batas 16:30 WIB';
+                else subPulang.textContent = 'Dibuka (13:35 - 16:30 WIB)';
+            }
+
+            return bisaMasuk || bisaPulang;
+        }
+
+        function perbaruiTombol() {
+            const waktuOk = cekStatusWaktu();
+            if (SEKOLAH.lengkap || SEKOLAH.terkunciIzin || !waktuOk) {
+                btnKirim.disabled = true;
+                return;
+            }
+            btnKirim.disabled = SEKOLAH.wajib ? !lokasiOk : false;
+        }
+
+        cekStatusWaktu();
+        setInterval(perbaruiTombol, 1000);
+
+        // ===== LOKASI GPS =====
         function fmtJarak(m) {
             if (m < 1000) return m + ' m';
             return (m / 1000).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + ' km';
@@ -303,11 +414,6 @@
             tKurangBox.className = 'p-3 rounded-2xl border ' + t.box;
         }
 
-        function perbaruiTombol() {
-            if (SEKOLAH.lengkap) { btnKirim.disabled = true; return; }
-            btnKirim.disabled = SEKOLAH.wajib ? !lokasiOk : false;
-        }
-
         function terimaPosisi(pos) {
             const { latitude, longitude, accuracy } = pos.coords;
             document.getElementById('latitude').value = latitude;
@@ -327,7 +433,6 @@
             const akurasiBaik = accuracy <= SEKOLAH.akurasi;
             const kurang = jarak - SEKOLAH.radius;
 
-            // Angka ringkas
             tJarak.textContent = fmtJarak(jarak);
             if (dalamRadius) {
                 tKurangLabel.textContent = 'Status';
@@ -337,7 +442,6 @@
                 tKurang.textContent = fmtJarak(kurang);
             }
 
-            // Bar: penuh bila sudah di dalam radius, makin pendek bila makin jauh
             const persen = dalamRadius ? 100 : Math.max(4, Math.min(96, (SEKOLAH.radius / jarak) * 100));
             bar.style.width = persen + '%';
 
@@ -396,7 +500,6 @@
             });
         }
 
-        // Aksi (masuk / pulang) -> isi field yang dikirim ke server
         form.addEventListener('submit', function () {
             const aksi = form.querySelector('input[name="aksi"]:checked');
             const status = document.getElementById('in_status');
@@ -413,8 +516,6 @@
                 if (label) label.textContent = r.value === 'pulang' ? 'Kirim Presensi Pulang' : 'Kirim Presensi Masuk';
             });
         });
-        const aksiAwal = form.querySelector('input[name="aksi"]:checked');
-        if (aksiAwal) aksiAwal.dispatchEvent(new Event('change'));
 
         document.getElementById('btn_ulang_lokasi').addEventListener('click', mulaiLokasi);
         window.addEventListener('beforeunload', () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); });

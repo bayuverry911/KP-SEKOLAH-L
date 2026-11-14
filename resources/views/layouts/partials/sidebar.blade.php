@@ -1,7 +1,18 @@
-<aside id="sidebar" class="fixed lg:static top-0 left-0 z-50 w-64 bg-gradient-to-b from-[#19A389] via-[#138A73] to-[#0D6353] text-white flex flex-col justify-between py-6 px-0 flex-shrink-0 h-screen lg:h-auto min-h-screen transition-transform duration-300 -translate-x-full lg:translate-x-0 overflow-y-auto rounded-tr-3xl rounded-br-3xl shadow-xl">
+<!-- BACKDROP GELAP UNTUK HP & TABLET -->
+<div id="sidebarBackdrop" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[1px] z-40 hidden lg:hidden transition-opacity duration-300"></div>
+
+<aside id="sidebar" class="fixed lg:static top-0 left-0 z-50 w-64 max-w-[82vw] bg-gradient-to-b from-[#19A389] via-[#138A73] to-[#0D6353] text-white flex flex-col justify-between py-6 px-0 flex-shrink-0 h-dvh lg:h-auto min-h-screen transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 overflow-y-auto rounded-tr-3xl rounded-br-3xl shadow-2xl lg:shadow-xl">
     <div>
+        <!-- Tombol Tutup Khusus HP & Tablet -->
+        <div class="flex justify-end px-4 lg:hidden -mt-2 mb-1">
+            <button type="button" id="closeSidebarBtn" aria-label="Tutup Menu"
+                class="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark text-base"></i>
+            </button>
+        </div>
+
         <!-- Brand Header / Logo Center -->
-        <div class="flex flex-col items-center text-center pt-2 pb-6 px-4">
+        <div class="flex flex-col items-center text-center pt-1 lg:pt-2 pb-6 px-4">
             <div class="w-20 h-20 flex items-center justify-center mb-2">
                 <img src="{{ asset('images/logo_smp_djojoredjo.jpeg') }}" 
                      onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=SMP+D&background=19A389&color=fff';" 
@@ -230,7 +241,7 @@
     <!-- Bottom Mascot Graphic (Berdasarkan Role User) -->
     <div class="pt-4 relative flex justify-center items-end mt-auto px-4">
         @if (Auth::check() && in_array(strtoupper(Auth::user()->role), ['ADMIN']))
-            <!-- Maskot Khusus Admin (Bebas dari error parser) -->
+            <!-- Maskot Khusus Admin -->
             <img src="{{ asset('images/maskot_admin.png') }}" 
                  onerror="this.onerror=null; this.src='/images/maskot_admin.jpeg';" 
                  alt="Mascot Admin" 
@@ -244,5 +255,60 @@
         @endif
     </div>
 </aside>
+
+<!-- SCRIPT GLOBAL SIDEBAR MOBILE & TABLET -->
+<script>
+    (function () {
+        const sidebar = document.getElementById('sidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        const closeBtn = document.getElementById('closeSidebarBtn');
+
+        if (!sidebar) return;
+
+        window.openSidebar = function () {
+            sidebar.classList.remove('-translate-x-full', 'hidden');
+            sidebar.classList.add('translate-x-0');
+            if (backdrop) backdrop.classList.remove('hidden');
+            document.body.classList.add('overflow-hidden', 'lg:overflow-auto');
+        };
+
+        window.closeSidebar = function () {
+            sidebar.classList.add('-translate-x-full');
+            sidebar.classList.remove('translate-x-0');
+            if (backdrop) backdrop.classList.add('hidden');
+            document.body.classList.remove('overflow-hidden', 'lg:overflow-auto');
+        };
+
+        window.toggleSidebar = function () {
+            if (sidebar.classList.contains('-translate-x-full')) {
+                window.openSidebar();
+            } else {
+                window.closeSidebar();
+            }
+        };
+
+        // Otomatis hubungkan semua tombol garis 3 di header (baik #mobileSidebarBtn maupun tombol fa-bars lainnya)
+        document.addEventListener('DOMContentLoaded', function () {
+            const toggleButtons = document.querySelectorAll('#mobileSidebarBtn, [data-sidebar-toggle], header button:has(.fa-bars)');
+            toggleButtons.forEach(function (btn) {
+                // Ganti node agar tidak bentrok dengan listener lama
+                const freshBtn = btn.cloneNode(true);
+                btn.parentNode.replaceChild(freshBtn, btn);
+                freshBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.toggleSidebar();
+                });
+            });
+        });
+
+        closeBtn?.addEventListener('click', window.closeSidebar);
+        backdrop?.addEventListener('click', window.closeSidebar);
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') window.closeSidebar();
+        });
+    })();
+</script>
 
 @include('layouts.partials.ui')

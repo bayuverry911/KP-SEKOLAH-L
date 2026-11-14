@@ -4,15 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\AbsensiGuru;
 use App\Models\Guru;
-use App\Models\Mapel;
-use App\Models\Kelas;
-use App\Models\Siswa;
 use App\Models\User;
-use App\Models\Jadwal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use App\Support\Geofence;
 use App\Services\AbsenSiswaService;
 use Carbon\Carbon;
@@ -28,7 +23,6 @@ class AbsensiGuruController extends Controller
     {
         $query = AbsensiGuru::query();
 
-        // 1. Filter Pencarian berdasarkan Nama atau NUPTK
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -37,11 +31,9 @@ class AbsensiGuruController extends Controller
             });
         }
 
-        // 2. Filter berdasarkan Tanggal (jika diisi, abaikan bulan/tahun)
         if ($request->filled('tanggal')) {
             $query->whereDate('tanggal', $request->tanggal);
         } else {
-            // 3. Filter berdasarkan Bulan & Tahun
             if ($request->filled('bulan')) {
                 $query->whereMonth('tanggal', $request->bulan);
             }
@@ -50,7 +42,6 @@ class AbsensiGuruController extends Controller
             }
         }
 
-        // Ringkasan jumlah (mengikuti filter yang sedang aktif)
         $hitungStatus = (clone $query)
             ->select('status', DB::raw('COUNT(*) AS total'))
             ->groupBy('status')
@@ -63,22 +54,16 @@ class AbsensiGuruController extends Controller
             'Sakit' => (int) ($hitungStatus['Sakit'] ?? 0),
         ];
 
-        // Data terbaru
         $absensis = $query
             ->latest('tanggal')
             ->latest('created_at')
             ->paginate(10);
 
-        // Pertahankan filter ketika pagination
         $absensis->appends($request->all());
 
-        // NUPTK cadangan: jika catatan presensi tidak menyimpan NUPTK ("-"),
-        // ambil dari tabel data guru berdasarkan akun yang absen.
         $nuptkGuru = Guru::whereIn('user_id', $absensis->pluck('user_id')->filter()->unique())
             ->pluck('nuptk', 'user_id');
 
-        // Daftar guru yang BELUM presensi pada tanggal yang dilihat
-        // (tanggal dipilih, atau hari ini jika tidak ada filter bulan/tahun/pencarian)
         $tanggalCek = $request->filled('tanggal')
             ? Carbon::parse($request->tanggal, 'Asia/Jakarta')->toDateString()
             : Carbon::now('Asia/Jakarta')->toDateString();
@@ -102,7 +87,6 @@ class AbsensiGuruController extends Controller
         ));
     }
 
-
     /**
      * ============================================================
      * TAMPILAN PRESENSI SAYA - GURU
@@ -111,7 +95,6 @@ class AbsensiGuruController extends Controller
     public function presensiGuruView()
     {
         $user = Auth::user();
-
         $today = Carbon::now('Asia/Jakarta')->toDateString();
 
         $absensiHariIni = AbsensiGuru::where('user_id', $user->id)
@@ -124,40 +107,30 @@ class AbsensiGuruController extends Controller
         );
     }
 
-
     /**
      * ============================================================
-     * STORE PRESENSI GURU
-     * Hadir, Izin, Sakit, Pulang
+     * STORE PRESENSI GURU (DENGAN PENGUNCIAN JAM MASUK & PULANG)
+     * Masuk: 06:00 - 08:30 (Toleransi telat: 07:20)
+     * Pulang: 13:35 - 16:30
      * ============================================================
      */
     public function store(Request $request)
     {
-        $user = Auth::user();
-
-        $today = Carbon::now('Asia/Jakarta')->toDateString();
-
-        $currentTime = Carbon::now('Asia/Jakarta')->toTimeString();
-
+        $user        = Auth::user();
+        $now         = Carbon::now('Asia/Jakarta');
+        $today       = $now->toDateString();
+        $currentTime = $now->toTimeString();
 
         $request->validate([
-            // Izin/Sakit/Dinas diajukan lewat menu Pengajuan Izin (butuh bukti & persetujuan admin)
-            'status' => 'nullable|in:Hadir',
-
+            'status'         => 'nullable|in:Hadir',
             'jenis_presensi' => 'nullable|in:Pulang',
-
-            'keterangan' => 'nullable|string|max:500',
-
-            // Data GPS dari browser
-            'latitude' => 'nullable|numeric|between:-90,90',
-
-            'longitude' => 'nullable|numeric|between:-180,180',
-
-            'akurasi' => 'nullable|numeric|min:0',
+            'keterangan'     => 'nullable|string|max:500',
+            'latitude'       => 'nullable|numeric|between:-90,90',
+            'longitude'      => 'nullable|numeric|between:-180,180',
+            'akurasi'        => 'nullable|numeric|min:0',
         ]);
 
-
-        // Izin sudah disetujui admin -> presensi hari ini terkunci
+        // 1. Cek jika terkunci izin
         $terkunciIzin = AbsensiGuru::where('user_id', $user->id)
             ->where('tanggal', $today)
             ->where('terkunci', true)
@@ -169,23 +142,44 @@ class AbsensiGuruController extends Controller
                 ->with('error', 'Presensi hari ini terkunci karena izin ' . $terkunciIzin->status . ' Anda sudah disetujui admin.');
         }
 
-        // ========================================================
-        // CEK LOKASI GPS (Hadir & Pulang wajib di dalam radius sekolah)
-        // Izin / Sakit tidak dibatasi lokasi.
-        // ========================================================
+        // 2. Validasi Jendela Waktu Server-Side (tidak bisa dibypass dari inspect element)
+        $isPulang   = $request->jenis_presensi === 'Pulang';
+        $bukaMasuk  = $now->copy()->setTime(6, 0, 0);
+        $batasTelat = $now->copy()->setTime(7, 20, 0);
+        $lockMasuk  = $now->copy()->setTime(8, 30, 0);
 
-        $perluLokasi =
-            $request->jenis_presensi === 'Pulang'
-            || ($request->status ?? 'Hadir') === 'Hadir';
+        $bukaPulang = $now->copy()->setTime(13, 35, 0);
+        $lockPulang = $now->copy()->setTime(16, 30, 0);
 
+        $menitTelat = 0;
+
+        if ($isPulang) {
+            if ($now->lt($bukaPulang)) {
+                return redirect()->back()->with('error', 'Presensi pulang masih terkunci. Baru dibuka pukul 13:35 WIB.');
+            }
+            if ($now->gt($lockPulang)) {
+                return redirect()->back()->with('error', 'Presensi pulang sudah terkunci karena melewati batas pukul 16:30 WIB.');
+            }
+        } else {
+            if ($now->lt($bukaMasuk)) {
+                return redirect()->back()->with('error', 'Presensi masuk belum dibuka. Presensi dibuka mulai pukul 06:00 WIB.');
+            }
+            if ($now->gt($lockMasuk)) {
+                return redirect()->back()->with('error', 'Presensi masuk sudah terkunci karena melewati batas pukul 08:30 WIB.');
+            }
+            if ($now->gt($batasTelat)) {
+                $menitTelat = (int) $batasTelat->diffInMinutes($now);
+            }
+        }
+
+        // 3. Cek Lokasi GPS
+        $perluLokasi = $isPulang || ($request->status ?? 'Hadir') === 'Hadir';
         $lokasi = null;
 
         if ($perluLokasi) {
-
             $lokasi = $this->cekLokasi($request);
 
             if (! $lokasi['ok']) {
-
                 return redirect()
                     ->back()
                     ->withInput()
@@ -193,15 +187,9 @@ class AbsensiGuruController extends Controller
             }
         }
 
-
         $guruData = Guru::where('user_id', $user->id)
-            ->orWhere(
-                'nama',
-                'ILIKE',
-                '%' . $user->name . '%'
-            )
+            ->orWhere('nama', 'ILIKE', '%' . $user->name . '%')
             ->first();
-
 
         $nuptkNip =
             $guruData->nuptk
@@ -209,129 +197,88 @@ class AbsensiGuruController extends Controller
             ?? $user->username
             ?? '-';
 
-
         $absensi = AbsensiGuru::firstOrNew([
             'user_id' => $user->id,
-
             'tanggal' => $today,
         ]);
 
-
         $absensi->nama_guru = $user->name;
-
         $absensi->nuptk_nip = $nuptkNip;
-
 
         // ========================================================
         // ABSEN PULANG
         // ========================================================
-
-        if ($request->jenis_presensi === 'Pulang') {
-
+        if ($isPulang) {
             if (! $absensi->exists || ! $absensi->jam_masuk) {
-
                 return redirect()
                     ->back()
                     ->with('error', 'Lakukan presensi masuk terlebih dahulu sebelum presensi pulang.');
             }
 
             if ($absensi->jam_keluar) {
-
                 return redirect()
                     ->back()
-                    ->with(
-                        'error',
-                        'Anda sudah melakukan absen pulang hari ini.'
-                    );
+                    ->with('error', 'Anda sudah melakukan absen pulang hari ini.');
             }
 
-
-            $absensi->jam_keluar = $currentTime;
-
-
-            $absensi->lat_keluar = $lokasi['lat'];
-
-            $absensi->lng_keluar = $lokasi['lng'];
-
+            $absensi->jam_keluar   = $currentTime;
+            $absensi->lat_keluar   = $lokasi['lat'];
+            $absensi->lng_keluar   = $lokasi['lng'];
             $absensi->jarak_keluar = $lokasi['jarak'];
 
+            if ($request->filled('keterangan')) {
+                $absensi->keterangan = trim(($absensi->keterangan ? $absensi->keterangan . ' | Pulang: ' : '') . $request->keterangan);
+            }
 
-            $pesan =
-                'Absen pulang berhasil dicatat pada pukul '
+            $pesan = 'Absen pulang berhasil dicatat pada pukul '
                 . substr($currentTime, 0, 5)
                 . ' WIB!'
                 . $this->infoJarak($lokasi);
-
         }
-
         // ========================================================
         // ABSEN MASUK
         // ========================================================
         else {
+            $statusPilihan = $request->status ?? 'Hadir';
 
-            $statusPilihan =
-                $request->status ?? 'Hadir';
-
-
-            if (
-                $absensi->exists &&
-                $absensi->status === 'Hadir' &&
-                $absensi->jam_masuk
-            ) {
-
+            if ($absensi->exists && $absensi->status === 'Hadir' && $absensi->jam_masuk) {
                 return redirect()
                     ->back()
-                    ->with(
-                        'error',
-                        'Anda sudah melakukan presensi masuk hari ini.'
-                    );
+                    ->with('error', 'Anda sudah melakukan presensi masuk hari ini.');
             }
-
 
             $absensi->status = $statusPilihan;
 
-
             if ($statusPilihan === 'Hadir') {
-
-                $absensi->jam_masuk = $currentTime;
-
-                $absensi->lat_masuk = $lokasi['lat'];
-
-                $absensi->lng_masuk = $lokasi['lng'];
-
+                $absensi->jam_masuk   = $currentTime;
+                $absensi->lat_masuk   = $lokasi['lat'];
+                $absensi->lng_masuk   = $lokasi['lng'];
                 $absensi->jarak_masuk = $lokasi['jarak'];
-
             } else {
-
                 $absensi->jam_masuk = null;
-
             }
 
+            $infoTelat = $menitTelat > 0 ? "Terlambat {$menitTelat} menit (batas 07:20 WIB)" : null;
+            $catatanUser = $request->filled('keterangan') ? $request->keterangan : null;
 
-            $pesan =
-                'Presensi status '
-                . $statusPilihan
-                . ' berhasil disimpan!'
+            $gabungKet = collect([$infoTelat, $catatanUser])->filter()->implode(' - ');
+            if ($gabungKet !== '') {
+                $absensi->keterangan = $gabungKet;
+            }
+
+            $pesan = 'Presensi masuk berhasil dicatat pada pukul '
+                . substr($currentTime, 0, 5)
+                . ' WIB'
+                . ($menitTelat > 0 ? " (Terlambat {$menitTelat} menit)!" : ' (Tepat Waktu)!')
                 . ($statusPilihan === 'Hadir' ? $this->infoJarak($lokasi) : '');
         }
 
-
-        if ($request->filled('keterangan')) {
-
-            $absensi->keterangan =
-                $request->keterangan;
-
-        }
-
-
         $absensi->save();
-
 
         return redirect()
             ->back()
             ->with('success', $pesan);
     }
-
 
     /** Kalimat tambahan "Jarak Anda dari sekolah: ..." untuk pesan sukses presensi. */
     private function infoJarak(?array $lokasi): string
@@ -344,29 +291,21 @@ class AbsensiGuruController extends Controller
             . ' (radius maksimal ' . Geofence::format((int) config('sekolah.radius_meter')) . ').';
     }
 
-
     /**
      * ============================================================
      * VALIDASI LOKASI GPS (SERVER-SIDE)
-     * Hitung jarak guru ke titik sekolah dengan rumus Haversine.
      * ============================================================
-     *
-     * @return array{ok: bool, pesan?: string, lat?: float|null, lng?: float|null, jarak?: int|null}
      */
     private function cekLokasi(Request $request): array
     {
         $lat = $request->filled('latitude') ? (float) $request->latitude : null;
-
         $lng = $request->filled('longitude') ? (float) $request->longitude : null;
 
-        // Pembatasan lokasi dimatikan lewat .env (SEKOLAH_GPS_WAJIB=false)
         if (! config('sekolah.gps_wajib')) {
-
             $jarakOpsional = null;
 
             if ($lat !== null && $lng !== null
                 && config('sekolah.latitude') !== null && config('sekolah.longitude') !== null) {
-
                 $jarakOpsional = (int) round(Geofence::jarakMeter(
                     (float) config('sekolah.latitude'), (float) config('sekolah.longitude'), $lat, $lng
                 ));
@@ -376,11 +315,9 @@ class AbsensiGuruController extends Controller
         }
 
         $sekolahLat = config('sekolah.latitude');
-
         $sekolahLng = config('sekolah.longitude');
 
         if ($sekolahLat === null || $sekolahLng === null) {
-
             return [
                 'ok'    => false,
                 'pesan' => 'Koordinat sekolah belum dikonfigurasi. Hubungi admin.',
@@ -388,7 +325,6 @@ class AbsensiGuruController extends Controller
         }
 
         if ($lat === null || $lng === null) {
-
             return [
                 'ok'    => false,
                 'pesan' => 'Lokasi GPS tidak terdeteksi. Aktifkan GPS & izinkan akses lokasi di browser, lalu coba lagi.',
@@ -402,7 +338,6 @@ class AbsensiGuruController extends Controller
         $akurasiMaks = (int) config('sekolah.akurasi_maks_meter');
 
         if ($request->filled('akurasi') && (float) $request->akurasi > $akurasiMaks) {
-
             return [
                 'ok'    => false,
                 'pesan' => 'Akurasi GPS terlalu rendah (±' . round((float) $request->akurasi)
@@ -414,7 +349,6 @@ class AbsensiGuruController extends Controller
         $radius = (int) config('sekolah.radius_meter');
 
         if ($jarak > $radius) {
-
             return [
                 'ok'    => false,
                 'pesan' => 'Anda berada ±' . Geofence::format($jarak) . ' dari sekolah. Presensi hanya dapat dilakukan dalam radius '
@@ -425,14 +359,9 @@ class AbsensiGuruController extends Controller
         return ['ok' => true, 'lat' => $lat, 'lng' => $lng, 'jarak' => $jarak];
     }
 
-
     /**
      * ============================================================
      * DASHBOARD GURU
-     *
-     * Menampilkan kartu jadwal HARI INI saja (jadwal sendiri +
-     * jadwal yang menugaskan guru ini sebagai pengganti).
-     * Dari kartu inilah absen siswa dimulai (akses satu pintu).
      * ============================================================
      */
     public function dashboard()
