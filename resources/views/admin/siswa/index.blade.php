@@ -40,7 +40,12 @@
                 </div>
 
                 <div class="flex items-center gap-2 shrink-0">
-                    <div class="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-xl shadow-sm border border-slate-200/60">
+                    @if(isset($tahunAktif) && $tahunAktif)
+                        <span class="hidden sm:inline-flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm border border-slate-200/60 text-xs font-semibold text-slate-600">
+                            <i class="fa-solid fa-graduation-cap text-[#19A389] mr-1.5"></i> TA Aktif: <b class="ml-1">{{ $tahunAktif->nama }}</b>
+                        </span>
+                    @endif
+                    <div class="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-xl shadow-sm border border-slate-200/60">
                         <i class="fa-regular fa-calendar text-[#19A389]"></i>
                         <span>{{ \Carbon\Carbon::now()->translatedFormat('l, d F Y') }}</span>
                     </div>
@@ -61,7 +66,7 @@
                         <div>
                             <p class="text-[11px] uppercase tracking-widest text-white/75 font-semibold">Master Data Peserta Didik</p>
                             <h2 class="text-xl sm:text-2xl font-extrabold mt-0.5">Data Siswa SMP Djojoredjo</h2>
-                            <p class="text-xs text-white/80 mt-1">Kelola biodata siswa, NISN, penempatan kelas, dan impor data massal</p>
+                            <p class="text-xs text-white/80 mt-1">Kelola biodata siswa, NISN, penempatan kelas aktif, dan impor data massal</p>
                         </div>
                         <div class="bg-white/15 backdrop-blur-sm border border-white/20 px-4 py-2.5 rounded-2xl text-xs font-semibold inline-flex items-center gap-2 self-start sm:self-auto shrink-0">
                             <i class="fa-solid fa-user-graduate"></i>
@@ -126,15 +131,22 @@
                         <!-- TAMPILAN HP (< 768px) -->
                         <div class="block md:hidden divide-y divide-slate-100">
                             @forelse($siswas as $siswa)
+                                @php $labelKelas = $siswa->kelas_aktif ?? $siswa->kelas; @endphp
                                 <div class="p-4 space-y-3 hover:bg-slate-50/70 transition">
                                     <div class="flex items-start justify-between gap-2">
                                         <div class="min-w-0">
                                             <p class="font-bold text-sm text-slate-900 truncate">{{ $siswa->nama }}</p>
                                             <p class="text-xs font-mono text-slate-500 mt-0.5">NISN: <b class="text-slate-700">{{ $siswa->nisn }}</b></p>
                                         </div>
-                                        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-[#0D6353] uppercase shrink-0">
-                                            {{ $siswa->kelas }}
-                                        </span>
+                                        @if($labelKelas === 'LULUS')
+                                            <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-700 uppercase shrink-0">
+                                                LULUS
+                                            </span>
+                                        @else
+                                            <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-[#0D6353] uppercase shrink-0">
+                                                {{ $labelKelas }}
+                                            </span>
+                                        @endif
                                     </div>
 
                                     <div class="flex items-center justify-between text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-xl">
@@ -183,14 +195,21 @@
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 text-slate-600">
                                     @forelse($siswas as $index => $siswa)
+                                        @php $labelKelas = $siswa->kelas_aktif ?? $siswa->kelas; @endphp
                                         <tr class="hover:bg-slate-50/90 transition">
                                             <td class="p-4 text-center font-semibold text-slate-400">{{ $siswas->firstItem() + $index }}</td>
                                             <td class="p-4 font-mono font-bold text-slate-700">{{ $siswa->nisn }}</td>
                                             <td class="p-4 font-bold text-slate-800">{{ $siswa->nama }}</td>
                                             <td class="p-4">
-                                                <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-[#0D6353] uppercase">
-                                                    {{ $siswa->kelas }}
-                                                </span>
+                                                @if($labelKelas === 'LULUS')
+                                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-700 uppercase">
+                                                        LULUS
+                                                    </span>
+                                                @else
+                                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-[#0D6353] uppercase">
+                                                        {{ $labelKelas }}
+                                                    </span>
+                                                @endif
                                             </td>
                                             <td class="p-4">{{ $siswa->jenis_kelamin }}</td>
                                             <td class="p-4 text-center">

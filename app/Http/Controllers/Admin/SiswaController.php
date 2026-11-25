@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Siswa;
 use App\Models\Kelas;
+use App\Models\TahunPelajaran;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use ZipArchive;
@@ -14,15 +15,36 @@ class SiswaController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Siswa::query();
+        $tahunAktif = TahunPelajaran::where('aktif', true)->first()
+            ?? TahunPelajaran::orderByDesc('tanggal_mulai')->first();
+
+        $query = Siswa::query()
+            ->leftJoin('kelas_siswas as ks', function ($join) use ($tahunAktif) {
+                $join->on('siswas.id', '=', 'ks.siswa_id');
+                if ($tahunAktif) {
+                    $join->where('ks.tahun_pelajaran_id', '=', $tahunAktif->id);
+                }
+            })
+            ->leftJoin('kelas as k', 'k.id', '=', 'ks.kelas_id')
+            ->select(
+                'siswas.*',
+                DB::raw("CASE
+                    WHEN ks.status = 'lulus' THEN 'LULUS'
+                    WHEN k.nama_kelas IS NOT NULL THEN k.nama_kelas
+                    ELSE siswas.kelas
+                END as kelas_aktif")
+            );
 
         if ($request->filled('search')) {
-            $query->where('nama', 'like', '%' . $request->search . '%')
-                  ->orWhere('nisn', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('siswas.nama', 'like', '%' . $search . '%')
+                  ->orWhere('siswas.nisn', 'like', '%' . $search . '%');
+            });
         }
 
-        $siswas = $query->latest()->paginate(10);
-        return view('admin.siswa.index', compact('siswas'));
+        $siswas = $query->latest('siswas.created_at')->paginate(10);
+        return view('admin.siswa.index', compact('siswas', 'tahunAktif'));
     }
 
     public function create()
@@ -118,7 +140,7 @@ class SiswaController extends Controller
         $berhasil       = 0;
         $duplikatDaftar = [];
         $gagalBaris     = [];
-        $sudahDiFile    = []; // Melacak NISN & Nama yang muncul berulang di dalam 1 file Excel
+        $sudahDiFile    = [];
 
         DB::beginTransaction();
         try {
@@ -129,7 +151,6 @@ class SiswaController extends Controller
                 $kelas   = trim((string) ($row[$idxKelas] ?? ''));
                 $jkRaw   = strtolower(trim((string) ($row[$idxJk] ?? '')));
 
-                // Lewati baris yang benar-benar kosong
                 if ($nisn === '' && $nama === '' && $kelas === '' && $jkRaw === '') {
                     continue;
                 }
@@ -139,7 +160,6 @@ class SiswaController extends Controller
                     continue;
                 }
 
-                // Normalisasi Jenis Kelamin
                 $jk = match (true) {
                     in_array($jkRaw, ['l', 'lk', 'laki', 'laki-laki', 'laki laki', 'pria', 'm'], true) => 'Laki-laki',
                     in_array($jkRaw, ['p', 'pr', 'perempuan', 'wanita', 'f'], true) => 'Perempuan',
@@ -151,14 +171,12 @@ class SiswaController extends Controller
                     continue;
                 }
 
-                // Cek duplikat di dalam file Excel yang sama
                 $kunciKombinasi = $nisn . '|' . strtolower($nama);
                 if (isset($sudahDiFile[$kunciKombinasi]) || isset($sudahDiFile['nisn:' . $nisn])) {
                     $duplikatDaftar[] = "Baris {$barisKe}: {$nama} (NISN {$nisn}) — ganda di dalam file Excel";
                     continue;
                 }
 
-                // Cek apakah NISN atau kombinasi NISN + Nama sudah terdaftar di database
                 $siswaAda = Siswa::where('nisn', $nisn)
                     ->orWhere(function ($q) use ($nisn, $nama) {
                         $q->where('nisn', $nisn)
@@ -175,10 +193,9 @@ class SiswaController extends Controller
                     continue;
                 }
 
-                $sudahDiFile[$kunciKombinasi]   = true;
-                $sudahDiFile['nisn:' . $nisn]   = true;
+                $sudahDiFile[$kunciKombinasi] = true;
+                $sudahDiFile['nisn:' . $nisn] = true;
 
-                // Cocokkan nama kelas (case-insensitive jika ada di master kelas)
                 $kelasKey   = strtoupper($kelas);
                 $kelasFinal = $kelasValid[$kelasKey] ?? $kelas;
 
@@ -197,7 +214,6 @@ class SiswaController extends Controller
             return back()->with('tab', 'excel')->with('error', 'Terjadi kesalahan saat membaca file: ' . $e->getMessage());
         }
 
-        // Jika seluruh data duplikat dan tidak ada yang baru ditambahkan
         if ($berhasil === 0 && ! empty($duplikatDaftar)) {
             return back()
                 ->with('tab', 'excel')
@@ -213,7 +229,6 @@ class SiswaController extends Controller
 
         $redirect = back()->with('tab', 'excel')->with('success', $ringkasan);
 
-        // Jika sebagian berhasil dan sebagian duplikat -> tampilkan toast pemberitahuan duplikat
         if (! empty($duplikatDaftar)) {
             $redirect->with('toast_duplikat', [
                 'judul' => count($duplikatDaftar) . ' Data Duplikat Dilewati',
@@ -258,7 +273,6 @@ class SiswaController extends Controller
         return null;
     }
 
-    /** Membaca file .csv dengan pemisah koma atau titik koma */
     private function bacaCsv(string $path): array
     {
         $rows = [];
@@ -275,7 +289,6 @@ class SiswaController extends Controller
         return $rows;
     }
 
-    /** Membaca sheet pertama file .xlsx secara native menggunakan ZipArchive + SimpleXML */
     private function bacaXlsx(string $path): array
     {
         $zip = new ZipArchive();
@@ -283,7 +296,6 @@ class SiswaController extends Controller
             return [];
         }
 
-        // Ambil shared strings
         $sharedStrings = [];
         $ssXml = $zip->getFromName('xl/sharedStrings.xml');
         if ($ssXml !== false) {
@@ -301,7 +313,6 @@ class SiswaController extends Controller
             }
         }
 
-        // Ambil sheet1
         $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
         $zip->close();
 
@@ -354,7 +365,6 @@ class SiswaController extends Controller
         return max(0, $index - 1);
     }
 
-    /** Membuat file .xlsx minimal valid untuk unduhan template */
     private function buatXlsx(string $filepath, array $rows): void
     {
         $zip = new ZipArchive();
@@ -374,7 +384,7 @@ class SiswaController extends Controller
 </Relationships>');
 
         $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 </Relationships>');
 
